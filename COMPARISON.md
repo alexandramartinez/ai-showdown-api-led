@@ -2,9 +2,9 @@
 
 A side-by-side evaluation of three AI-generated MuleSoft **API-led connectivity** solutions built from the same prompt ([`instructions-given.md`](instructions-given.md)): a Customers + Orders domain across the Experience / Process / System layers, 11 CRUD operations, mock/seed data in the system layer, at least 3 APIs, and the "latest" Mule / Maven / DataWeave.
 
-- 🟦 **Claude** — `claude/` (Claude Code, Opus 4.8)
-- 🟨 **CurieTech** — `curie/`
-- 🟩 **MuleSoft Vibes** — `vibes/`
+- 🟦 **Claude** — `claude-code/` (Claude Code, Opus 4.8)
+- 🟨 **CurieTech** — `curietech-ai/`
+- 🟩 **MuleSoft Vibes** — `mulesoft-vibes/`
 
 > **Version note:** Version findings below were verified directly against `docs.mulesoft.com` release-notes pages. All version numbers each AI used are real, released versions.
 
@@ -69,7 +69,7 @@ flowchart TB
 
 - **Claude (strongest):** `original-claude-plan.md` + README explicitly argue *"One Process API, not two… Customer is the natural aggregate root with orders as a sub-resource… System APIs split per entity… one System API per system-of-record… No 'one big API' and no over-splitting."* It consciously chose 4 and explained the trade-off.
 - **Curie (documented per app):** each app ships its own README describing the full 5-app call chain and ports (exp :8080 → prc-customer :8083 / prc-order :8084 → sys-customers :8081 / sys-orders :8082). The sys-orders README even notes the seed intentionally leaves one customer (CUST-005) with **no orders** so the "delete only if no orders" rule can be demonstrated. What's missing is a *single* top-level rationale doc tying the five together and justifying the per-entity process split.
-- **Vibes (none):** no README, no design doc, no comments explaining the count. The `vibes/services` folder is empty. You'd only know the topology by reading the flows.
+- **Vibes (none):** no README, no design doc, no comments explaining the count. You'd only know the topology by reading the flows.
 
 ---
 

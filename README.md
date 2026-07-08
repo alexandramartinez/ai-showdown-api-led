@@ -11,9 +11,9 @@ Three different AIs were given the **same prompt** and asked to build a MuleSoft
 
 | | Model | Folder | What it built |
 |---|---|---|---|
-| 🟦 **Claude** | Opus 4.8, **MAX effort** | [`claude/`](claude/) | 4 apps (1 exp · 1 prc · 2 sys) with a **parent reactor POM** |
-| 🟨 **CurieTech** | (not disclosed) | [`curie/`](curie/) | **5 apps** (1 exp · 2 prc · 2 sys) — per-entity split at both process + system layers |
-| 🟩 **MuleSoft Vibes** | Sonnet (effort unknown) | [`vibes/`](vibes/) | 4 apps (1 exp · 1 prc · 2 sys) |
+| 🟦 **Claude** | Opus 4.8, **MAX effort** | [`claude-code/`](claude-code/) | 4 apps (1 exp · 1 prc · 2 sys) with a **parent reactor POM** |
+| 🟨 **CurieTech** | (not disclosed) | [`curietech-ai/`](curietech-ai/) | **5 apps** (1 exp · 2 prc · 2 sys) — per-entity split at both process + system layers |
+| 🟩 **MuleSoft Vibes** | Sonnet (effort unknown) | [`mulesoft-vibes/`](mulesoft-vibes/) | 4 apps (1 exp · 1 prc · 2 sys) |
 
 > **Model note:** Claude Code ran on **Opus 4.8 at MAX effort**. MuleSoft Vibes' UI showed it running on **Sonnet** (reasoning effort not shown). CurieTech AI did not surface which model/effort it used. Worth keeping in mind when reading the results — these weren't necessarily comparable tiers of compute.
 
@@ -85,7 +85,7 @@ ai-showdown-2/
 ├── instructions-given.md   ← the shared prompt
 ├── COMPARISON.md           ← detailed head-to-head analysis
 ├── README.md               ← you are here
-├── claude/                 ← 🟦 Claude's solution (4 Mule apps + parent pom)
-├── curie/                  ← 🟨 CurieTech's solution (5 Mule apps)
-└── vibes/                  ← 🟩 MuleSoft Vibes' solution (4 Mule apps)
+├── claude-code/            ← 🟦 Claude's solution (4 Mule apps + parent pom)
+├── curietech-ai/           ← 🟨 CurieTech's solution (5 Mule apps)
+└── mulesoft-vibes/         ← 🟩 MuleSoft Vibes' solution (4 Mule apps)
 ```

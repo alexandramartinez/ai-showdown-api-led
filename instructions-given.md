@@ -3,7 +3,7 @@ create an api-led connectivity network example with the 3 layers (experience, pr
 create a customers + orders architecture for this.
 
 these are the operations you can do:
-- list all the customer
+- list all the customers
 - list one customer's details
 - get each customer's orders
 - see one customer's order's details
