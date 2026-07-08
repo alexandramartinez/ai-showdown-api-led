@@ -1,0 +1,16 @@
+#%RAML 1.0 DataType
+type: object
+description: A customer profile with their orders embedded (Experience-layer aggregate).
+properties:
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  phone:
+    type: string
+    required: false
+  createdAt: datetime
+  orderCount: integer
+  orders:
+    type: array
+    items: !include Order.raml

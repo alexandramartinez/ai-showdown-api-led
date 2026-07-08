@@ -1,0 +1,81 @@
+#%RAML 1.0
+title: System API - Orders
+version: v1
+baseUri: http://localhost:8084/api
+mediaType: application/json
+
+types:
+  Order: !include dataTypes/Order.raml
+  NewOrder: !include dataTypes/NewOrder.raml
+  Error: !include dataTypes/Error.raml
+
+/orders:
+  get:
+    description: List all orders, optionally filtered by customerId.
+    queryParameters:
+      customerId:
+        type: string
+        required: false
+        description: When present, returns only orders attached to this customer.
+    responses:
+      200:
+        body:
+          application/json:
+            type: Order[]
+            example: !include examples/orders.json
+  post:
+    description: Create a new order. The caller supplies customerId (FK).
+    body:
+      application/json:
+        type: NewOrder
+        example: !include examples/new-order.json
+    responses:
+      201:
+        body:
+          application/json:
+            type: Order
+            example: !include examples/order.json
+      400:
+        body:
+          application/json:
+            type: Error
+  /{orderId}:
+    uriParameters:
+      orderId:
+        type: string
+    get:
+      description: Get one order's details.
+      responses:
+        200:
+          body:
+            application/json:
+              type: Order
+              example: !include examples/order.json
+        404:
+          body:
+            application/json:
+              type: Error
+    put:
+      description: Edit an existing order (full replace of mutable fields).
+      body:
+        application/json:
+          type: NewOrder
+          example: !include examples/new-order.json
+      responses:
+        200:
+          body:
+            application/json:
+              type: Order
+              example: !include examples/order.json
+        404:
+          body:
+            application/json:
+              type: Error
+    delete:
+      description: Hard-delete an order.
+      responses:
+        204:
+        404:
+          body:
+            application/json:
+              type: Error

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+	<!-- ===================== GET /customers ===================== -->
+	<flow name="get:\customers:customer-management-api-config" doc:name="GET /customers">
+		<http:request method="GET" config-ref="sys-api-request-config"
+			url="#[p('sys.customers.baseUrl') ++ '/customers']" doc:name="GET sys-customers /customers" />
+	</flow>
+
+	<!-- ===================== POST /customers ===================== -->
+	<flow name="post:\customers:application\json:customer-management-api-config" doc:name="POST /customers">
+		<flow-ref name="validate-customer-payload" doc:name="Validate payload" />
+		<http:request method="POST" config-ref="sys-api-request-config"
+			url="#[p('sys.customers.baseUrl') ++ '/customers']" doc:name="POST sys-customers /customers">
+			<http:headers><![CDATA[#[{ "Content-Type": "application/json" }]]]></http:headers>
+		</http:request>
+		<set-variable variableName="httpStatus" value="#[201]" doc:name="Set 201" />
+	</flow>
+
+	<!-- ===================== GET /customers/{customerId} ===================== -->
+	<flow name="get:\customers\(customerId):customer-management-api-config" doc:name="GET /customers/{id}">
+		<http:request method="GET" config-ref="sys-api-request-config"
+			url="#[p('sys.customers.baseUrl') ++ '/customers/' ++ attributes.uriParams.customerId]"
+			doc:name="GET sys-customers /customers/{id}" />
+	</flow>
+
+	<!-- ===================== PUT /customers/{customerId} ===================== -->
+	<flow name="put:\customers\(customerId):application\json:customer-management-api-config" doc:name="PUT /customers/{id}">
+		<flow-ref name="validate-customer-payload" doc:name="Validate payload" />
+		<http:request method="PUT" config-ref="sys-api-request-config"
+			url="#[p('sys.customers.baseUrl') ++ '/customers/' ++ attributes.uriParams.customerId]"
+			doc:name="PUT sys-customers /customers/{id}">
+			<http:headers><![CDATA[#[{ "Content-Type": "application/json" }]]]></http:headers>
+		</http:request>
+	</flow>
+
+	<!-- ===================== DELETE /customers/{customerId} ===================== -->
+	<!-- BUSINESS RULE: a customer can only be deleted if it has NO orders. -->
+	<flow name="delete:\customers\(customerId):customer-management-api-config" doc:name="DELETE /customers/{id}">
+		<http:request method="GET" config-ref="sys-api-request-config"
+			url="#[p('sys.orders.baseUrl') ++ '/orders?customerId=' ++ attributes.uriParams.customerId]"
+			doc:name="GET sys-orders /orders?customerId" />
+		<choice doc:name="Has orders?">
+			<when expression="#[(payload default []) is Array and !isEmpty(payload)]">
+				<raise-error type="APP:CUSTOMER_HAS_ORDERS"
+					description="Cannot delete customer with existing orders" doc:name="Raise CUSTOMER_HAS_ORDERS" />
+			</when>
+			<otherwise>
+				<http:request method="DELETE" config-ref="sys-api-request-config"
+					url="#[p('sys.customers.baseUrl') ++ '/customers/' ++ attributes.uriParams.customerId]"
+					doc:name="DELETE sys-customers /customers/{id}" />
+				<set-payload value="#[null]" doc:name="Empty body" />
+				<set-variable variableName="httpStatus" value="#[204]" doc:name="Set 204" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<!-- ===================== Reusable validation ===================== -->
+	<sub-flow name="validate-customer-payload" doc:name="validate-customer-payload">
+		<set-variable variableName="validationMessage" doc:name="Compute validation message" value="#[%dw 2.0&#10;output application/java&#10;var body = payload&#10;---&#10;if (body.firstName == null or (body.firstName default '') == '') 'firstName is required'&#10;else if (body.lastName == null or (body.lastName default '') == '') 'lastName is required'&#10;else if (body.email == null or (body.email default '') == '') 'email is required'&#10;else if (!((body.email default '') matches /^[^@\s]+@[^@\s]+\.[^@\s]+$/)) 'email format is invalid'&#10;else null]" />
+		<choice doc:name="Invalid?">
+			<when expression="#[vars.validationMessage != null]">
+				<raise-error type="APP:VALIDATION_ERROR" description="#[vars.validationMessage]"
+					doc:name="Raise VALIDATION_ERROR" />
+			</when>
+		</choice>
+	</sub-flow>
+
+</mule>

@@ -1,0 +1,356 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ==================== GET /customers ==================== -->
+    <flow name="list-customers-flow"
+        doc:name="List Customers Flow"
+        doc:description="Returns the full list of all customers from seeded mock data">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers"
+            allowedMethods="GET"
+            doc:name="GET /customers"
+            doc:description="Receives GET requests to list all customers">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <ee:transform
+            doc:name="Load customers from mock data"
+            doc:description="Reads all customers from the seeded customers.json resource file">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+readUrl("classpath://mock-data/customers.json", "application/json")]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <logger
+            level="INFO"
+            message="#['[customer-sys-api] GET /customers → returning ' ++ (sizeOf(payload) as String) ++ ' customers']"
+            doc:name="Log list customers"
+            doc:description="Logs the number of customers returned" />
+    </flow>
+
+    <!-- ==================== GET /customers/{customerId} ==================== -->
+    <flow name="get-customer-flow"
+        doc:name="Get Customer Flow"
+        doc:description="Returns a single customer record by ID from seeded mock data, or 404 if not found">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers/{customerId}"
+            allowedMethods="GET"
+            doc:name="GET /customers/{customerId}"
+            doc:description="Receives GET requests to retrieve a specific customer by ID">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable
+            variableName="customerId"
+            value="#[attributes.uriParams.customerId]"
+            doc:name="Store customerId"
+            doc:description="Captures the customerId URI parameter into a flow variable" />
+        <ee:transform
+            doc:name="Find customer by ID"
+            doc:description="Filters the customers mock data to find the customer matching the requested ID">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var customers = readUrl("classpath://mock-data/customers.json", "application/json")
+var result = customers filter ($.id == vars.customerId)
+---
+if (isEmpty(result)) null else result[0]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice
+            doc:name="Customer found?"
+            doc:description="Routes based on whether the customer ID exists in mock data">
+            <when expression="#[payload == null]"
+                doc:name="Not found"
+                doc:description="Customer ID does not match any seeded record">
+                <set-variable
+                    variableName="httpStatus"
+                    value="404"
+                    doc:name="Set 404 status"
+                    doc:description="Sets HTTP response status to 404 Not Found" />
+                <ee:transform
+                    doc:name="Build 404 error body"
+                    doc:description="Constructs a JSON error response indicating the customer was not found">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Customer with ID '" ++ vars.customerId ++ "' was not found",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise
+                doc:name="Found"
+                doc:description="Customer record found, return 200">
+                <set-variable
+                    variableName="httpStatus"
+                    value="200"
+                    doc:name="Set 200 status"
+                    doc:description="Sets HTTP response status to 200 OK" />
+            </otherwise>
+        </choice>
+        <logger
+            level="INFO"
+            message="#['[customer-sys-api] GET /customers/' ++ vars.customerId ++ ' → ' ++ (vars.httpStatus default '200')]"
+            doc:name="Log get customer"
+            doc:description="Logs the result status of the customer lookup" />
+    </flow>
+
+    <!-- ==================== POST /customers ==================== -->
+    <flow name="create-customer-flow"
+        doc:name="Create Customer Flow"
+        doc:description="Creates a new customer record and returns the created resource with a generated ID">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers"
+            allowedMethods="POST"
+            doc:name="POST /customers"
+            doc:description="Receives POST requests to create a new customer">
+            <http:response statusCode="#[vars.httpStatus default 201]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <ee:transform
+            doc:name="Build created customer response"
+            doc:description="Constructs the created customer object with a generated ID and timestamp, echoing input fields">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import * from dw::core::UUID
+---
+{
+    id: "c" ++ ((randomUUID() splitBy "-")[0]),
+    name: payload.name,
+    email: payload.email,
+    phone: payload.phone default null,
+    status: "ACTIVE",
+    createdAt: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <set-variable
+            variableName="httpStatus"
+            value="201"
+            doc:name="Set 201 status"
+            doc:description="Sets HTTP response status to 201 Created" />
+        <logger
+            level="INFO"
+            message="#['[customer-sys-api] POST /customers → created customer ' ++ payload.id]"
+            doc:name="Log create customer"
+            doc:description="Logs the ID of the newly created customer" />
+    </flow>
+
+    <!-- ==================== PUT /customers/{customerId} ==================== -->
+    <flow name="update-customer-flow"
+        doc:name="Update Customer Flow"
+        doc:description="Updates an existing customer record by ID and returns the updated resource, or 404 if not found">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers/{customerId}"
+            allowedMethods="PUT"
+            doc:name="PUT /customers/{customerId}"
+            doc:description="Receives PUT requests to update an existing customer by ID">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable
+            variableName="customerId"
+            value="#[attributes.uriParams.customerId]"
+            doc:name="Store customerId"
+            doc:description="Captures the customerId URI parameter into a flow variable" />
+        <set-variable
+            variableName="requestPayload"
+            value="#[payload]"
+            doc:name="Store request payload"
+            doc:description="Preserves the incoming request payload before customer lookup" />
+        <ee:transform
+            doc:name="Check customer exists"
+            doc:description="Verifies the customer ID exists in the mock data before applying the update">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var customers = readUrl("classpath://mock-data/customers.json", "application/json")
+var existing = customers filter ($.id == vars.customerId)
+---
+if (isEmpty(existing)) null else existing[0]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice
+            doc:name="Customer exists?"
+            doc:description="Routes based on whether the customer ID to update exists in mock data">
+            <when expression="#[payload == null]"
+                doc:name="Not found"
+                doc:description="Customer ID does not exist, return 404">
+                <set-variable
+                    variableName="httpStatus"
+                    value="404"
+                    doc:name="Set 404 status"
+                    doc:description="Sets HTTP response status to 404 Not Found" />
+                <ee:transform
+                    doc:name="Build 404 error body"
+                    doc:description="Constructs a JSON error response indicating the customer to update was not found">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Customer with ID '" ++ vars.customerId ++ "' was not found",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise
+                doc:name="Found — apply update"
+                doc:description="Customer exists, merge incoming fields and return updated record">
+                <ee:transform
+                    doc:name="Merge update into customer"
+                    doc:description="Merges the incoming request fields onto the existing customer record, preserving id and createdAt">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    id: vars.customerId,
+    name: vars.requestPayload.name default payload.name,
+    email: vars.requestPayload.email default payload.email,
+    phone: vars.requestPayload.phone default payload.phone default null,
+    status: vars.requestPayload.status default payload.status default "ACTIVE",
+    createdAt: payload.createdAt,
+    updatedAt: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable
+                    variableName="httpStatus"
+                    value="200"
+                    doc:name="Set 200 status"
+                    doc:description="Sets HTTP response status to 200 OK" />
+            </otherwise>
+        </choice>
+        <logger
+            level="INFO"
+            message="#['[customer-sys-api] PUT /customers/' ++ vars.customerId ++ ' → ' ++ (vars.httpStatus default '200')]"
+            doc:name="Log update customer"
+            doc:description="Logs the result status of the customer update operation" />
+    </flow>
+
+    <!-- ==================== DELETE /customers/{customerId} ==================== -->
+    <flow name="delete-customer-flow"
+        doc:name="Delete Customer Flow"
+        doc:description="Deletes a customer record by ID. Returns 204 No Content on success, 404 if not found. Business rule enforcement (no orders) is handled by the process layer.">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers/{customerId}"
+            allowedMethods="DELETE"
+            doc:name="DELETE /customers/{customerId}"
+            doc:description="Receives DELETE requests to remove a customer by ID">
+            <http:response statusCode="#[vars.httpStatus default 204]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable
+            variableName="customerId"
+            value="#[attributes.uriParams.customerId]"
+            doc:name="Store customerId"
+            doc:description="Captures the customerId URI parameter into a flow variable" />
+        <ee:transform
+            doc:name="Check customer exists"
+            doc:description="Verifies the customer ID exists in mock data before performing the delete">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var customers = readUrl("classpath://mock-data/customers.json", "application/json")
+var existing = customers filter ($.id == vars.customerId)
+---
+if (isEmpty(existing)) null else existing[0]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice
+            doc:name="Customer exists?"
+            doc:description="Routes based on whether the customer ID to delete exists in mock data">
+            <when expression="#[payload == null]"
+                doc:name="Not found"
+                doc:description="Customer ID does not exist, return 404">
+                <set-variable
+                    variableName="httpStatus"
+                    value="404"
+                    doc:name="Set 404 status"
+                    doc:description="Sets HTTP response status to 404 Not Found" />
+                <ee:transform
+                    doc:name="Build 404 error body"
+                    doc:description="Constructs a JSON error response indicating the customer to delete was not found">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Customer with ID '" ++ vars.customerId ++ "' was not found",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise
+                doc:name="Deleted"
+                doc:description="Customer found, simulate deletion and return 204 No Content">
+                <set-variable
+                    variableName="httpStatus"
+                    value="204"
+                    doc:name="Set 204 status"
+                    doc:description="Sets HTTP response status to 204 No Content" />
+                <set-payload
+                    value="#[null]"
+                    doc:name="Empty response body"
+                    doc:description="Sets empty payload for 204 No Content response" />
+            </otherwise>
+        </choice>
+        <logger
+            level="INFO"
+            message="#['[customer-sys-api] DELETE /customers/' ++ vars.customerId ++ ' → ' ++ (vars.httpStatus default '204')]"
+            doc:name="Log delete customer"
+            doc:description="Logs the result status of the customer delete operation" />
+    </flow>
+
+</mule>

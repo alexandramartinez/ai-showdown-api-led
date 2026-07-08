@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+	<flow name="api-main">
+		<http:listener config-ref="HTTP_Listener_config" path="/api/*" doc:name="HTTP Listener">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body><![CDATA[#[payload]]]></http:body>
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<apikit:router config-ref="api-config" doc:name="APIkit Router" />
+	</flow>
+
+	<flow name="get:\customers\(customerId)\orders:api-config">
+		<logger level="INFO" doc:name="Log list orders request" message="Listing orders for customer #[attributes.uriParams.customerId]" />
+		<http:request method="GET" config-ref="HTTP_Request_config" url="#[p('sys.orders.baseUrl') ++ '/orders']" doc:name="Get orders by customer">
+			<http:headers><![CDATA[#[{'Accept': 'application/json'}]]]></http:headers>
+			<http:query-params><![CDATA[#[{'customerId': attributes.uriParams.customerId}]]]></http:query-params>
+		</http:request>
+		<set-variable variableName="httpStatus" value="#[200]" doc:name="Set 200 status" />
+	</flow>
+
+	<flow name="get:\orders\(orderId):api-config">
+		<logger level="INFO" doc:name="Log get order request" message="Getting order #[attributes.uriParams.orderId]" />
+		<http:request method="GET" config-ref="HTTP_Request_config" url="#[p('sys.orders.baseUrl') ++ '/orders/' ++ attributes.uriParams.orderId]" doc:name="Get order by id">
+			<http:headers><![CDATA[#[{'Accept': 'application/json'}]]]></http:headers>
+		</http:request>
+		<set-variable variableName="httpStatus" value="#[200]" doc:name="Set 200 status" />
+	</flow>
+
+	<flow name="post:\customers\(customerId)\orders:api-config">
+		<logger level="INFO" doc:name="Log create order request" message="Creating order for customer #[attributes.uriParams.customerId]" />
+		<set-variable variableName="orderRequest" value="#[payload]" doc:name="Store order request" />
+		<try doc:name="Validate customer exists">
+			<http:request method="GET" config-ref="HTTP_Request_config" url="#[p('sys.customers.baseUrl') ++ '/customers/' ++ attributes.uriParams.customerId]" doc:name="Get customer for create">
+				<http:headers><![CDATA[#[{'Accept': 'application/json'}]]]></http:headers>
+			</http:request>
+			<error-handler>
+				<on-error-continue type="HTTP:NOT_FOUND" logException="false">
+					<ee:transform doc:name="Build customer not found response">
+						<ee:message>
+							<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "CUSTOMER_NOT_FOUND"
+}]]></ee:set-payload>
+						</ee:message>
+						<ee:variables>
+							<ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+							<ee:set-variable variableName="customerFound"><![CDATA[false]]></ee:set-variable>
+						</ee:variables>
+					</ee:transform>
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<choice doc:name="Create only when customer exists">
+			<when expression="#[vars.customerFound default true]">
+				<set-payload value="#[vars.orderRequest]" doc:name="Restore order request" />
+				<flow-ref name="validate-order-payload-subflow" doc:name="Validate order payload" />
+				<ee:transform doc:name="Set path customer on order">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+(vars.orderRequest - "customerId") ++ {
+  customerId: attributes.uriParams.customerId
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<http:request method="POST" config-ref="HTTP_Request_config" url="#[p('sys.orders.baseUrl') ++ '/orders']" doc:name="Create order">
+					<http:body><![CDATA[#[payload]]]></http:body>
+					<http:headers><![CDATA[#[{'Content-Type': 'application/json', 'Accept': 'application/json'}]]]></http:headers>
+				</http:request>
+				<set-variable variableName="httpStatus" value="#[201]" doc:name="Set 201 status" />
+			</when>
+		</choice>
+	</flow>
+
+	<flow name="put:\orders\(orderId):api-config">
+		<logger level="INFO" doc:name="Log update order request" message="Updating order #[attributes.uriParams.orderId]" />
+		<flow-ref name="validate-order-payload-subflow" doc:name="Validate order payload" />
+		<set-variable variableName="orderRequest" value="#[payload]" doc:name="Store update request" />
+		<choice doc:name="Validate customer when supplied">
+			<when expression="#[payload.customerId?]">
+				<try doc:name="Validate supplied customer exists">
+					<http:request method="GET" config-ref="HTTP_Request_config" url="#[p('sys.customers.baseUrl') ++ '/customers/' ++ payload.customerId]" doc:name="Get customer for update">
+						<http:headers><![CDATA[#[{'Accept': 'application/json'}]]]></http:headers>
+					</http:request>
+					<error-handler>
+						<on-error-continue type="HTTP:NOT_FOUND" logException="false">
+							<ee:transform doc:name="Build customer not found response">
+								<ee:message>
+									<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "CUSTOMER_NOT_FOUND"
+}]]></ee:set-payload>
+								</ee:message>
+								<ee:variables>
+									<ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+									<ee:set-variable variableName="customerFound"><![CDATA[false]]></ee:set-variable>
+								</ee:variables>
+							</ee:transform>
+						</on-error-continue>
+					</error-handler>
+				</try>
+			</when>
+		</choice>
+		<choice doc:name="Update only when customer valid">
+			<when expression="#[vars.customerFound default true]">
+				<set-payload value="#[vars.orderRequest]" doc:name="Restore update request" />
+				<http:request method="PUT" config-ref="HTTP_Request_config" url="#[p('sys.orders.baseUrl') ++ '/orders/' ++ attributes.uriParams.orderId]" doc:name="Update order">
+					<http:body><![CDATA[#[payload]]]></http:body>
+					<http:headers><![CDATA[#[{'Content-Type': 'application/json', 'Accept': 'application/json'}]]]></http:headers>
+				</http:request>
+				<set-variable variableName="httpStatus" value="#[200]" doc:name="Set 200 status" />
+			</when>
+		</choice>
+	</flow>
+
+	<flow name="post:\orders\(orderId)\cancel:api-config">
+		<logger level="INFO" doc:name="Log cancel order request" message="Cancelling order #[attributes.uriParams.orderId]" />
+		<http:request method="GET" config-ref="HTTP_Request_config" url="#[p('sys.orders.baseUrl') ++ '/orders/' ++ attributes.uriParams.orderId]" doc:name="Get order before cancel">
+			<http:headers><![CDATA[#[{'Accept': 'application/json'}]]]></http:headers>
+		</http:request>
+		<choice doc:name="Cancel unless already cancelled">
+			<when expression="#[upper(payload.status default '') == 'CANCELLED']">
+				<ee:transform doc:name="Build already cancelled response">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "ALREADY_CANCELLED"
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[409]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<set-payload value="#[{status: 'CANCELLED'}]" mimeType="application/json" doc:name="Build cancel status request" />
+				<http:request method="PATCH" config-ref="HTTP_Request_config" url="#[p('sys.orders.baseUrl') ++ '/orders/' ++ attributes.uriParams.orderId ++ '/status']" doc:name="Patch order status">
+					<http:body><![CDATA[#[payload]]]></http:body>
+					<http:headers><![CDATA[#[{'Content-Type': 'application/json', 'Accept': 'application/json'}]]]></http:headers>
+				</http:request>
+				<set-variable variableName="httpStatus" value="#[200]" doc:name="Set 200 status" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<flow name="delete:\orders\(orderId):api-config">
+		<logger level="INFO" doc:name="Log delete order request" message="Deleting order #[attributes.uriParams.orderId]" />
+		<http:request method="DELETE" config-ref="HTTP_Request_config" url="#[p('sys.orders.baseUrl') ++ '/orders/' ++ attributes.uriParams.orderId]" doc:name="Delete order">
+			<http:headers><![CDATA[#[{'Accept': 'application/json'}]]]></http:headers>
+		</http:request>
+		<set-variable variableName="httpStatus" value="#[204]" doc:name="Set 204 status" />
+		<set-payload value="#[null]" doc:name="Clear delete response payload" />
+	</flow>
+
+	<sub-flow name="validate-order-payload-subflow">
+		<choice doc:name="Check order item quantities">
+			<when expression="#[isEmpty(payload.items default []) or (not isEmpty((payload.items default []) filter ((item) -> (item.quantity default 0) &lt;= 0)))]">
+				<raise-error type="APP:BAD_REQUEST" description="Order payload must include at least one item and all quantities must be greater than zero." doc:name="Raise invalid order payload" />
+			</when>
+		</choice>
+	</sub-flow>
+</mule>

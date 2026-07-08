@@ -1,0 +1,18 @@
+# Maven
+target/
+
+# Mule
+.mule/
+*.jar
+
+# File-mock working stores (created at runtime; seeds live in src/main/resources/data)
+**/data-store/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.factorypath
+
+# OS
+.DS_Store

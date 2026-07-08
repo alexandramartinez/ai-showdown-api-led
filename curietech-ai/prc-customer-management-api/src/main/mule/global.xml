@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+		http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<!-- Load environment configuration (mule.env defaults to dev) -->
+	<global-property name="mule.env" value="dev" />
+	<configuration-properties file="config/config-${mule.env}.yaml" doc:name="Configuration properties" />
+
+	<!-- Register the global error handler as the default for every flow -->
+	<configuration defaultErrorHandler-ref="global-error-handler" doc:name="Configuration" />
+
+	<!-- Inbound HTTP listener for this Process API -->
+	<http:listener-config name="prc-http-listener-config" doc:name="HTTP Listener config">
+		<http:listener-connection host="0.0.0.0" port="${http.port}" />
+	</http:listener-config>
+
+	<!-- Outbound HTTP requester used to reach the SYSTEM layer APIs.
+	     Full target URLs are supplied per-request via the 'url' attribute
+	     using the sys.*.baseUrl properties, so this connection only needs
+	     a placeholder host/port. -->
+	<http:request-config name="sys-api-request-config" doc:name="System API HTTP Request config">
+		<http:request-connection host="localhost" port="80" />
+	</http:request-config>
+
+	<!-- APIkit router configuration bound to the RAML spec -->
+	<apikit:config name="customer-management-api-config" api="api/customer-management-api.raml"
+		outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" doc:name="APIkit Router config" />
+
+	<!-- Global error handler: maps downstream/system + business errors to HTTP status + JSON body -->
+	<error-handler name="global-error-handler" doc:name="Global error handler">
+
+		<on-error-propagate type="APP:VALIDATION_ERROR" doc:name="Validation error -> 400">
+			<ee:transform doc:name="400 body">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "VALIDATION_ERROR", message: error.description default "Invalid request payload" }]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus"><![CDATA[400]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+
+		<on-error-propagate type="APP:CUSTOMER_HAS_ORDERS" doc:name="Customer has orders -> 409">
+			<ee:transform doc:name="409 body">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "CUSTOMER_HAS_ORDERS", message: "Cannot delete customer with existing orders" }]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus"><![CDATA[409]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+
+		<on-error-propagate type="APIKIT:BAD_REQUEST, HTTP:BAD_REQUEST" doc:name="Bad request -> 400">
+			<ee:transform doc:name="400 body">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "BAD_REQUEST", message: "The request could not be understood" }]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus"><![CDATA[400]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+
+		<on-error-propagate type="APIKIT:NOT_FOUND, HTTP:NOT_FOUND" doc:name="Not found -> 404">
+			<ee:transform doc:name="404 body">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "NOT_FOUND", message: "Resource not found" }]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+
+		<on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED" doc:name="Method not allowed -> 405">
+			<ee:transform doc:name="405 body">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "METHOD_NOT_ALLOWED", message: "HTTP method not allowed for this resource" }]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus"><![CDATA[405]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+
+		<on-error-propagate type="HTTP:CONNECTIVITY, HTTP:TIMEOUT, HTTP:RETRY_EXHAUSTED" doc:name="Downstream connectivity -> 502">
+			<ee:transform doc:name="502 body">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "BAD_GATEWAY", message: "Unable to reach downstream system API" }]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus"><![CDATA[502]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+
+		<on-error-propagate type="ANY" doc:name="Generic -> 500">
+			<ee:transform doc:name="500 body">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "INTERNAL_SERVER_ERROR", message: "An unexpected error occurred" }]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus"><![CDATA[500]]></ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+
+	</error-handler>
+
+</mule>

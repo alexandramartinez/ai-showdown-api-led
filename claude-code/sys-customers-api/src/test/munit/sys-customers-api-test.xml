@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <munit:config name="sys-customers-api-test.xml" minMuleVersion="4.9.0"/>
+
+    <!-- Each test starts from a clean table by deleting the working file first. -->
+    <munit:before-test name="reset-table">
+        <try>
+            <munit-tools:remove-file path="./data-store/customers.json"/>
+            <error-handler>
+                <on-error-continue type="ANY"/>
+            </error-handler>
+        </try>
+    </munit:before-test>
+
+    <munit:test name="get-all-customers-returns-seed">
+        <munit:execution>
+            <flow-ref name="get:\customers:apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(4)]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo('200')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="get-one-customer-found">
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: '11111111-1111-1111-1111-111111111111' } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.firstName]" is="#[MunitTools::equalTo('Ada')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo('200')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="get-one-customer-not-found-raises-404" expectedErrorType="APIKIT:NOT_FOUND">
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: 'does-not-exist' } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+    </munit:test>
+
+    <munit:test name="create-then-get-persists-record">
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload value="#[output application/json --- { firstName: 'Grace', lastName: 'Hopper', email: 'grace.hopper@example.com', phone: '+1-202-555-0103' }]"/>
+            </munit:set-event>
+            <flow-ref name="post:\customers:application\json:apiConfig"/>
+            <set-variable variableName="createdId" value="#[payload.id]"/>
+            <!-- Read it back through the GET-one flow to prove persistence. -->
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: vars.createdId } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.lastName]" is="#[MunitTools::equalTo('Hopper')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="delete-then-get-is-404" expectedErrorType="APIKIT:NOT_FOUND">
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: '44444444-4444-4444-4444-444444444444' } }]"/>
+            </munit:set-event>
+            <flow-ref name="delete:\customers\(customerId):apiConfig"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo('204')]"/>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: '44444444-4444-4444-4444-444444444444' } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+    </munit:test>
+</mule>

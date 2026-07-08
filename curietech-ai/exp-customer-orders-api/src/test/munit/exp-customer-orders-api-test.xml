@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+    <munit:config name="exp-customer-orders-api-test.xml"/>
+
+    <munit:test name="get-customers-test" description="GET /customers returns customer list from customer process API">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Get Customers">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Get Customers"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/customer-list.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 200, reasonPhrase: 'OK', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set GET Customers Event">
+                <munit:attributes value="#[{uriParams: {}, headers: {'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers:exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload]" is="#[MunitTools::equalTo(read(MunitTools::getResourceAsString('fixtures/customer-list.json'), 'application/json'))]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Get Customers Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Get Customers"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="get-customer-by-id-test" description="GET /customers/{customerId} returns a single customer">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Get Customer">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Get Customer"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/customer.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 200, reasonPhrase: 'OK', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set GET Customer Event">
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421'}, headers: {'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId):exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.id]" is="#[MunitTools::equalTo('CUST-10421')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Get Customer Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Get Customer"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="post-customers-test" description="POST /customers creates a customer">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Create Customer">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Create Customer"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/customer-created.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 201, reasonPhrase: 'Created', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set POST Customer Event">
+                <munit:payload value="#[MunitTools::getResourceAsString('fixtures/customer-create-request.json')]" mediaType="application/json" encoding="UTF-8"/>
+                <munit:attributes value="#[{uriParams: {}, headers: {'content-type': 'application/json', 'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="post:\customers:exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.id]" is="#[MunitTools::equalTo('CUST-10423')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(201)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Create Customer Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Create Customer"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="put-customer-by-id-test" description="PUT /customers/{customerId} updates a customer">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Update Customer">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Update Customer"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/customer-updated.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 200, reasonPhrase: 'OK', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set PUT Customer Event">
+                <munit:payload value="#[MunitTools::getResourceAsString('fixtures/customer-update-request.json')]" mediaType="application/json" encoding="UTF-8"/>
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421'}, headers: {'content-type': 'application/json', 'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="put:\customers\(customerId):exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.email]" is="#[MunitTools::equalTo('james.harrington.new@example.com')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Update Customer Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Update Customer"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="delete-customer-conflict-test" description="DELETE /customers/{customerId} propagates downstream 409 conflict body">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Delete Customer Conflict">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Delete Customer"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/customer-delete-conflict.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 409, reasonPhrase: 'Conflict', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set DELETE Customer Event">
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421'}, headers: {'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="delete:\customers\(customerId):exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.error]" is="#[MunitTools::equalTo('CONFLICT')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(409)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Delete Customer Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Customer Process API - Delete Customer"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="get-customer-orders-test" description="GET /customers/{customerId}/orders returns customer order list">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Get Customer Orders">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Get Customer Orders"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/order-list.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 200, reasonPhrase: 'OK', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set GET Customer Orders Event">
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421'}, headers: {'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId)\orders:exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(2)]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Get Customer Orders Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Get Customer Orders"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="get-order-by-id-test" description="GET /customers/{customerId}/orders/{orderId} returns order by id">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Get Order">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Get Order"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/order.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 200, reasonPhrase: 'OK', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set GET Order Event">
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421', orderId: 'ORD-001'}, headers: {'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId)\orders\(orderId):exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.id]" is="#[MunitTools::equalTo('ORD-001')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Get Order Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Get Order"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="post-customer-orders-test" description="POST /customers/{customerId}/orders creates an order">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Create Order">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Create Order"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/order-created.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 201, reasonPhrase: 'Created', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set POST Customer Order Event">
+                <munit:payload value="#[MunitTools::getResourceAsString('fixtures/order-create-request.json')]" mediaType="application/json" encoding="UTF-8"/>
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421'}, headers: {'content-type': 'application/json', 'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="post:\customers\(customerId)\orders:exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.id]" is="#[MunitTools::equalTo('ORD-003')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(201)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Create Order Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Create Order"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="put-order-by-id-test" description="PUT /customers/{customerId}/orders/{orderId} updates an order">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Update Order">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Update Order"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/order-updated.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 200, reasonPhrase: 'OK', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set PUT Order Event">
+                <munit:payload value="#[MunitTools::getResourceAsString('fixtures/order-update-request.json')]" mediaType="application/json" encoding="UTF-8"/>
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421', orderId: 'ORD-001'}, headers: {'content-type': 'application/json', 'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="put:\customers\(customerId)\orders\(orderId):exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.totalAmount]" is="#[MunitTools::equalTo(239.97)]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Update Order Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Update Order"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="cancel-order-test" description="POST /customers/{customerId}/orders/{orderId}/cancel cancels an order">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Cancel Order">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Cancel Order"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[MunitTools::getResourceAsString('fixtures/order-cancelled.json')]" mediaType="application/json" encoding="UTF-8"/>
+                    <munit-tools:attributes value="#[{statusCode: 200, reasonPhrase: 'OK', headers: {'content-type': 'application/json'}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set Cancel Order Event">
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421', orderId: 'ORD-001'}, headers: {'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="post:\customers\(customerId)\orders\(orderId)\cancel:exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.status]" is="#[MunitTools::equalTo('CANCELLED')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Cancel Order Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Cancel Order"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="delete-order-test" description="DELETE /customers/{customerId}/orders/{orderId} deletes an order">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request" doc:name="Mock Delete Order">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Delete Order"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[null]" mediaType="application/json"/>
+                    <munit-tools:attributes value="#[{statusCode: 204, reasonPhrase: 'No Content', headers: {}}]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event doc:name="Set DELETE Order Event">
+                <munit:attributes value="#[{uriParams: {customerId: 'CUST-10421', orderId: 'ORD-001'}, headers: {'x-correlation-id': 'test-correlation-id'}}]"/>
+            </munit:set-event>
+            <flow-ref name="delete:\customers\(customerId)\orders\(orderId):exp-customer-orders-api-config"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload]" is="#[MunitTools::nullValue()]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(204)]"/>
+            <munit-tools:verify-call processor="http:request" times="1" doc:name="Verify Delete Order Call">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="doc:name" whereValue="Call Order Process API - Delete Order"/>
+                </munit-tools:with-attributes>
+            </munit-tools:verify-call>
+        </munit:validation>
+    </munit:test>
+
+</mule>

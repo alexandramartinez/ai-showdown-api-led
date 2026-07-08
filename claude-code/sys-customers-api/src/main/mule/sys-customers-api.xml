@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ============ APIkit router (contract-first) ============ -->
+    <flow name="sys-customers-api-main">
+        <http:listener config-ref="httpListenerConfig" path="${http.basePath}/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="apiConfig"/>
+        <error-handler ref="globalErrorHandler"/>
+    </flow>
+
+    <flow name="sys-customers-api-console">
+        <http:listener config-ref="httpListenerConfig" path="${http.basePath}/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+        </http:listener>
+        <apikit:console config-ref="apiConfig"/>
+        <error-handler ref="globalErrorHandler"/>
+    </flow>
+
+    <!-- ============ GET /customers ============ -->
+    <flow name="get:\customers:apiConfig">
+        <flow-ref name="customers-readTable"/>
+        <set-variable variableName="httpStatus" value="200"/>
+    </flow>
+
+    <!-- ============ POST /customers ============ -->
+    <flow name="post:\customers:application\json:apiConfig">
+        <set-variable variableName="newCustomer" value="#[payload]"/>
+        <flow-ref name="customers-readTable"/>
+        <ee:transform doc:name="append new customer">
+            <ee:variables>
+                <ee:set-variable variableName="created"><![CDATA[%dw 2.0
+output application/json
+---
+{
+  id: uuid(),
+  firstName: vars.newCustomer.firstName,
+  lastName: vars.newCustomer.lastName,
+  email: vars.newCustomer.email,
+  (phone: vars.newCustomer.phone) if (vars.newCustomer.phone?),
+  createdAt: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+}]]></ee:set-variable>
+            </ee:variables>
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload << vars.created]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <flow-ref name="customers-writeTable"/>
+        <set-payload value="#[vars.created]"/>
+        <set-variable variableName="httpStatus" value="201"/>
+    </flow>
+
+    <!-- ============ GET /customers/{customerId} ============ -->
+    <flow name="get:\customers\(customerId):apiConfig">
+        <flow-ref name="customers-readTable"/>
+        <ee:transform doc:name="find by id">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload filter ($.id == attributes.uriParams.customerId)]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice doc:name="found?">
+            <when expression="#[sizeOf(payload) > 0]">
+                <set-payload value="#[payload[0]]"/>
+                <set-variable variableName="httpStatus" value="200"/>
+            </when>
+            <otherwise>
+                <flow-ref name="raiseNotFound"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <!-- ============ PUT /customers/{customerId} ============ -->
+    <flow name="put:\customers\(customerId):application\json:apiConfig">
+        <set-variable variableName="update" value="#[payload]"/>
+        <flow-ref name="customers-readTable"/>
+        <choice doc:name="exists?">
+            <when expression="#[payload some ($.id == attributes.uriParams.customerId)]">
+                <ee:transform doc:name="replace fields (id/createdAt preserved)">
+                    <ee:variables>
+                        <ee:set-variable variableName="updated"><![CDATA[%dw 2.0
+output application/json
+var target = payload filter ($.id == attributes.uriParams.customerId)
+---
+(target[0] default {}) ++
+{
+  firstName: vars.update.firstName,
+  lastName: vars.update.lastName,
+  email: vars.update.email
+} ++ (if (vars.update.phone?) {phone: vars.update.phone} else {})]]></ee:set-variable>
+                    </ee:variables>
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map (c) -> if (c.id == attributes.uriParams.customerId) vars.updated else c]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <flow-ref name="customers-writeTable"/>
+                <set-payload value="#[vars.updated]"/>
+                <set-variable variableName="httpStatus" value="200"/>
+            </when>
+            <otherwise>
+                <flow-ref name="raiseNotFound"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <!-- ============ DELETE /customers/{customerId} ============ -->
+    <flow name="delete:\customers\(customerId):apiConfig">
+        <flow-ref name="customers-readTable"/>
+        <choice doc:name="exists?">
+            <when expression="#[payload some ($.id == attributes.uriParams.customerId)]">
+                <ee:transform doc:name="remove by id">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload filter ($.id != attributes.uriParams.customerId)]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <flow-ref name="customers-writeTable"/>
+                <set-payload value="#[null]"/>
+                <set-variable variableName="httpStatus" value="204"/>
+            </when>
+            <otherwise>
+                <flow-ref name="raiseNotFound"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <!-- Shared helper: raise a 404 through the global error handler. -->
+    <sub-flow name="raiseNotFound">
+        <raise-error type="APIKIT:NOT_FOUND" description="Customer not found"/>
+    </sub-flow>
+</mule>

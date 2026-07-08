@@ -1,0 +1,115 @@
+#%RAML 1.0
+title: Process API - Customer & Order Management
+version: v1
+baseUri: http://localhost:8082/api
+mediaType: application/json
+
+types:
+  Customer: !include dataTypes/Customer.raml
+  NewCustomer: !include dataTypes/NewCustomer.raml
+  Order: !include dataTypes/Order.raml
+  NewOrder: !include dataTypes/NewOrder.raml
+  Error: !include dataTypes/Error.raml
+
+/customers:
+  get:
+    description: List all customers.
+    responses:
+      200:
+        body:
+          application/json:
+            type: Customer[]
+  post:
+    description: Create a new customer.
+    body:
+      application/json:
+        type: NewCustomer
+    responses:
+      201:
+        body:
+          application/json:
+            type: Customer
+      400:
+        body: { application/json: { type: Error } }
+  /{customerId}:
+    uriParameters:
+      customerId: string
+    get:
+      description: Get one customer's details.
+      responses:
+        200:
+          body: { application/json: { type: Customer } }
+        404:
+          body: { application/json: { type: Error } }
+    put:
+      description: Edit an existing customer's details.
+      body:
+        application/json:
+          type: NewCustomer
+      responses:
+        200:
+          body: { application/json: { type: Customer } }
+        404:
+          body: { application/json: { type: Error } }
+    delete:
+      description: >
+        Delete a customer ONLY IF it has no orders attached.
+        Returns 409 Conflict when orders exist.
+      responses:
+        204:
+        404:
+          body: { application/json: { type: Error } }
+        409:
+          body: { application/json: { type: Error } }
+    /orders:
+      get:
+        description: List a customer's orders.
+        responses:
+          200:
+            body: { application/json: { type: Order[] } }
+          404:
+            body: { application/json: { type: Error } }
+      post:
+        description: Create a new order attached to this customer.
+        body:
+          application/json:
+            type: NewOrder
+        responses:
+          201:
+            body: { application/json: { type: Order } }
+          404:
+            body: { application/json: { type: Error } }
+      /{orderId}:
+        uriParameters:
+          orderId: string
+        get:
+          description: Get one of the customer's order's details.
+          responses:
+            200:
+              body: { application/json: { type: Order } }
+            404:
+              body: { application/json: { type: Error } }
+        put:
+          description: Edit an existing order (stays attached to the customer).
+          body:
+            application/json:
+              type: NewOrder
+          responses:
+            200:
+              body: { application/json: { type: Order } }
+            404:
+              body: { application/json: { type: Error } }
+        delete:
+          description: Delete an existing order.
+          responses:
+            204:
+            404:
+              body: { application/json: { type: Error } }
+        /cancel:
+          post:
+            description: Cancel an existing order. Sets status=CANCELLED; does NOT delete it.
+            responses:
+              200:
+                body: { application/json: { type: Order } }
+              404:
+                body: { application/json: { type: Error } }

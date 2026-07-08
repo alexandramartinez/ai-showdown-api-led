@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+	xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xsi:schemaLocation="
+    http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+    http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+    http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+    http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
+    http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+	<munit:config name="sys-orders-api-test.xml" />
+
+	<!-- Reseed the mock datastore before every test to guarantee a deterministic state -->
+	<munit:before-test name="seed-store-before-test" description="Seed order store">
+		<flow-ref name="sys-orders-seed-data" doc:name="Seed data" />
+	</munit:before-test>
+
+	<!-- ========================= GET all ========================= -->
+	<munit:test name="get-all-orders-test" description="GET /orders returns all seeded orders">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ queryParams: {} }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="get:\orders:sys-orders-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="8 orders" expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(8)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- ================== GET all filtered by customerId ================== -->
+	<munit:test name="get-orders-by-customer-test" description="GET /orders?customerId= filters by customer">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ queryParams: { customerId: 'CUST-001' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="get:\orders:sys-orders-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="2 orders for CUST-001" expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(2)]" />
+			<munit-tools:assert-that doc:name="All belong to CUST-001" expression="#[sizeOf(payload filter ((o) -> o.customerId != 'CUST-001'))]" is="#[MunitTools::equalTo(0)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- ========================= GET one (found) ========================= -->
+	<munit:test name="get-one-order-found-test" description="GET /orders/{id} returns the order">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ uriParams: { orderId: 'ORD-001' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="get:\orders\(orderId):sys-orders-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Correct id" expression="#[payload.id]" is="#[MunitTools::equalTo('ORD-001')]" />
+			<munit-tools:assert-that doc:name="Correct customer" expression="#[payload.customerId]" is="#[MunitTools::equalTo('CUST-001')]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- ========================= GET one (404) ========================= -->
+	<munit:test name="get-one-order-not-found-test" description="GET /orders/{id} returns 404 when missing">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ uriParams: { orderId: 'ORD-999' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="get:\orders\(orderId):sys-orders-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Error body" expression="#[payload.error]" is="#[MunitTools::equalTo('ORDER_NOT_FOUND')]" />
+			<munit-tools:assert-that doc:name="Status 404" expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(404)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- ========================= POST create ========================= -->
+	<munit:test name="post-create-order-test" description="POST /orders creates an order with computed total">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:payload value="#[MunitTools::getResourceAsString('test-data/new-order.json')]" mediaType="application/json" encoding="UTF-8" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="post:\orders:application\json:sys-orders-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Generated id ORD-009" expression="#[payload.id]" is="#[MunitTools::equalTo('ORD-009')]" />
+			<munit-tools:assert-that doc:name="Default status NEW" expression="#[payload.status]" is="#[MunitTools::equalTo('NEW')]" />
+			<munit-tools:assert-that doc:name="Total computed (2*19.99 + 1*5.00)" expression="#[payload.totalAmount]" is="#[MunitTools::equalTo(44.98)]" />
+			<munit-tools:assert-that doc:name="Status 201" expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(201)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- ========================= PUT update ========================= -->
+	<munit:test name="put-update-order-test" description="PUT /orders/{id} updates order and recomputes total">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:payload value="#[MunitTools::getResourceAsString('test-data/update-order.json')]" mediaType="application/json" encoding="UTF-8" />
+				<munit:attributes value="#[{ uriParams: { orderId: 'ORD-001' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="put:\orders\(orderId):application\json:sys-orders-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Id preserved" expression="#[payload.id]" is="#[MunitTools::equalTo('ORD-001')]" />
+			<munit-tools:assert-that doc:name="Status updated" expression="#[payload.status]" is="#[MunitTools::equalTo('CONFIRMED')]" />
+			<munit-tools:assert-that doc:name="Total recomputed (4*10.00)" expression="#[payload.totalAmount]" is="#[MunitTools::equalTo(40.00)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- ========================= PATCH status ========================= -->
+	<munit:test name="patch-status-order-test" description="PATCH /orders/{id}/status updates status only">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:payload value="#[output application/json --- { status: 'CANCELLED' }]" mediaType="application/json" />
+				<munit:attributes value="#[{ uriParams: { orderId: 'ORD-002' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="patch:\orders\(orderId)\status:application\json:sys-orders-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Status cancelled" expression="#[payload.status]" is="#[MunitTools::equalTo('CANCELLED')]" />
+			<munit-tools:assert-that doc:name="Id preserved" expression="#[payload.id]" is="#[MunitTools::equalTo('ORD-002')]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- ========================= DELETE ========================= -->
+	<munit:test name="delete-order-test" description="DELETE /orders/{id} removes the order and returns 204">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ uriParams: { orderId: 'ORD-003' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="delete:\orders\(orderId):sys-orders-api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Status 204" expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(204)]" />
+			<os:contains key="ORD-003" objectStore="orderStore" target="stillThere" doc:name="Check removed" />
+			<munit-tools:assert-that doc:name="Order removed" expression="#[vars.stillThere]" is="#[MunitTools::equalTo(false)]" />
+		</munit:validation>
+	</munit:test>
+
+</mule>

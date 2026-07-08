@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.acme.aic</groupId>
+    <artifactId>customer-orders-network</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    <name>API-Led Connectivity Network :: Customers &amp; Orders</name>
+    <description>
+        Reference API-led connectivity network (Experience / Process / System) for a
+        Customers + Orders domain. Aggregator/parent POM: centralizes versions and the
+        Mule build for all four application modules.
+    </description>
+
+    <!--
+      Build order is enforced by Maven's reactor via the <modules> list below,
+      but at RUNTIME the apps must be started bottom-up (system -> process -> experience).
+      See the root README.md.
+    -->
+    <modules>
+        <module>sys-customers-api</module>
+        <module>sys-orders-api</module>
+        <module>prc-customer-orders-api</module>
+        <module>exp-customer-orders-api</module>
+    </modules>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>17</maven.compiler.release>
+
+        <!-- ============================================================
+             Version targets (latest as of 2026-01; bump if newer exists).
+             MuleSoft artifacts resolve from the MuleSoft repositories,
+             NOT Maven Central. See <repositories> and settings.xml notes
+             in the root README.
+             ============================================================ -->
+        <app.runtime>4.9.0</app.runtime>
+        <mule.maven.plugin.version>4.3.0</mule.maven.plugin.version>
+        <mule.apikit.version>1.11.3</mule.apikit.version>
+        <mule.http.connector.version>1.10.3</mule.http.connector.version>
+        <mule.sockets.connector.version>1.2.5</mule.sockets.connector.version>
+        <mule.file.connector.version>1.5.3</mule.file.connector.version>
+        <munit.version>3.4.0</munit.version>
+    </properties>
+
+    <!-- Children set their own <packaging>mule-application</packaging>. -->
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.mule.tools.maven</groupId>
+                    <artifactId>mule-maven-plugin</artifactId>
+                    <version>${mule.maven.plugin.version}</version>
+                    <extensions>true</extensions>
+                </plugin>
+                <plugin>
+                    <groupId>com.mulesoft.munit.tools</groupId>
+                    <artifactId>munit-maven-plugin</artifactId>
+                    <version>${munit.version}</version>
+                    <executions>
+                        <execution>
+                            <id>test</id>
+                            <phase>test</phase>
+                            <goals>
+                                <goal>test</goal>
+                                <goal>coverage-report</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <!-- MuleSoft artifacts are NOT on Maven Central. -->
+    <repositories>
+        <repository>
+            <id>anypoint-exchange-v3</id>
+            <name>Anypoint Exchange</name>
+            <url>https://maven.anypoint.mulesoft.com/api/v3/maven</url>
+            <layout>default</layout>
+        </repository>
+        <repository>
+            <id>mulesoft-releases</id>
+            <name>MuleSoft Releases Repository</name>
+            <url>https://repository.mulesoft.org/releases/</url>
+            <layout>default</layout>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>mulesoft-releases</id>
+            <name>MuleSoft Releases Repository</name>
+            <url>https://repository.mulesoft.org/releases/</url>
+            <layout>default</layout>
+        </pluginRepository>
+    </pluginRepositories>
+</project>

@@ -1,0 +1,7 @@
+{
+  "customerId": "IGNORED-BODY-CUSTOMER",
+  "items": [
+    { "sku": "SKU-101", "quantity": 2 },
+    { "sku": "SKU-202", "quantity": 1 }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "orderId": "ORD-003",
+  "customerId": "CUST-001",
+  "status": "CREATED",
+  "items": [
+    { "sku": "SKU-101", "quantity": 2 },
+    { "sku": "SKU-202", "quantity": 1 }
+  ],
+  "createdAt": "2026-07-07T18:24:56Z"
+}

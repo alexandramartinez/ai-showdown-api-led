@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- File-backed mock "orders" table. See sys-customers-api/persistence.xml for the pattern. -->
+
+    <sub-flow name="orders-readTable">
+        <try>
+            <file:read config-ref="fileConfig" path="${data.file}" outputMimeType="application/json"/>
+            <set-payload value="#[payload]" doc:name="table -> payload (List)"/>
+            <error-handler>
+                <on-error-continue type="FILE:ILLEGAL_PATH, FILE:FILE_NOT_FOUND, FILE:ACCESS_DENIED">
+                    <set-payload value='#[readUrl("classpath://data/orders.seed.json", "application/json")]' doc:name="load seed"/>
+                    <flow-ref name="orders-writeTable"/>
+                </on-error-continue>
+            </error-handler>
+        </try>
+    </sub-flow>
+
+    <sub-flow name="orders-writeTable">
+        <ee:transform doc:name="table -> JSON string">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <file:write config-ref="fileConfig" path="${data.file}" mode="OVERWRITE">
+            <file:content>#[payload]</file:content>
+        </file:write>
+        <set-payload value='#[read(payload, "application/json")]' doc:name="restore List payload"/>
+    </sub-flow>
+</mule>

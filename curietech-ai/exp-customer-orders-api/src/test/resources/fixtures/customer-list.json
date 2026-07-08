@@ -1,0 +1,16 @@
+[
+  {
+    "id": "CUST-10421",
+    "firstName": "James",
+    "lastName": "Harrington",
+    "email": "james.harrington@example.com",
+    "status": "ACTIVE"
+  },
+  {
+    "id": "CUST-10422",
+    "firstName": "Sophia",
+    "lastName": "Nguyen",
+    "email": "sophia.nguyen@example.com",
+    "status": "INACTIVE"
+  }
+]

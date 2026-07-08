@@ -1,0 +1,19 @@
+[
+  {
+    "orderId": "ORD-10021",
+    "customerId": "CUST-001",
+    "status": "SHIPPED",
+    "items": [
+      { "sku": "SKU-A1001", "quantity": 2 },
+      { "sku": "SKU-B2045", "quantity": 1 }
+    ]
+  },
+  {
+    "orderId": "ORD-10035",
+    "customerId": "CUST-001",
+    "status": "CREATED",
+    "items": [
+      { "sku": "SKU-C3012", "quantity": 3 }
+    ]
+  }
+]

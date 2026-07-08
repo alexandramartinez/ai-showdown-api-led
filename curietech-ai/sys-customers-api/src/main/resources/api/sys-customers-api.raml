@@ -1,0 +1,89 @@
+#%RAML 1.0
+title: sys-customers-api
+version: v1
+baseUri: http://0.0.0.0:8081/api
+mediaType: application/json
+
+types:
+  Customer:
+    type: object
+    properties:
+      id:
+        type: string
+        example: CUST-001
+      firstName: string
+      lastName: string
+      email: string
+      phone: string
+      createdAt:
+        type: string
+        example: "2024-01-10T09:00:00Z"
+  CustomerInput:
+    type: object
+    properties:
+      firstName: string
+      lastName: string
+      email: string
+      phone: string
+  Error:
+    type: object
+    properties:
+      error: string
+      message?: string
+
+/customers:
+  get:
+    description: Return all customers
+    responses:
+      200:
+        body:
+          application/json:
+            type: Customer[]
+  post:
+    description: Create a new customer
+    body:
+      application/json:
+        type: CustomerInput
+    responses:
+      201:
+        body:
+          application/json:
+            type: Customer
+  /{customerId}:
+    uriParameters:
+      customerId:
+        type: string
+        example: CUST-001
+    get:
+      description: Return a single customer
+      responses:
+        200:
+          body:
+            application/json:
+              type: Customer
+        404:
+          body:
+            application/json:
+              type: Error
+    put:
+      description: Update an existing customer
+      body:
+        application/json:
+          type: CustomerInput
+      responses:
+        200:
+          body:
+            application/json:
+              type: Customer
+        404:
+          body:
+            application/json:
+              type: Error
+    delete:
+      description: Delete a customer
+      responses:
+        204:
+        404:
+          body:
+            application/json:
+              type: Error

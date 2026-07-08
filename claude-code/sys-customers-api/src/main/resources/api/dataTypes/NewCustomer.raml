@@ -1,0 +1,13 @@
+#%RAML 1.0 DataType
+type: object
+description: Payload for creating or replacing a customer. Server owns id and createdAt.
+properties:
+  firstName: string
+  lastName: string
+  email:
+    type: string
+    pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+  phone:
+    type: string
+    required: false
+additionalProperties: false

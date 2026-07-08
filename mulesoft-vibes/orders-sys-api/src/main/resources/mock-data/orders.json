@@ -1,0 +1,60 @@
+[
+  {
+    "id": "o001",
+    "customerId": "c001",
+    "items": [
+      {"productId": "p001", "name": "Laptop Stand", "quantity": 1, "unitPrice": 49.99},
+      {"productId": "p002", "name": "USB Hub", "quantity": 2, "unitPrice": 24.99}
+    ],
+    "total": 99.97,
+    "status": "DELIVERED",
+    "createdAt": "2025-01-20T08:00:00Z",
+    "updatedAt": "2025-01-25T14:00:00Z"
+  },
+  {
+    "id": "o002",
+    "customerId": "c001",
+    "items": [
+      {"productId": "p003", "name": "Mechanical Keyboard", "quantity": 1, "unitPrice": 149.99}
+    ],
+    "total": 149.99,
+    "status": "PROCESSING",
+    "createdAt": "2025-06-01T10:00:00Z",
+    "updatedAt": "2025-06-01T10:00:00Z"
+  },
+  {
+    "id": "o003",
+    "customerId": "c002",
+    "items": [
+      {"productId": "p004", "name": "Monitor", "quantity": 1, "unitPrice": 299.00}
+    ],
+    "total": 299.00,
+    "status": "SHIPPED",
+    "createdAt": "2025-05-15T11:00:00Z",
+    "updatedAt": "2025-05-18T09:00:00Z"
+  },
+  {
+    "id": "o004",
+    "customerId": "c002",
+    "items": [
+      {"productId": "p005", "name": "Webcam", "quantity": 1, "unitPrice": 45.00}
+    ],
+    "total": 45.00,
+    "status": "CANCELLED",
+    "createdAt": "2025-04-10T16:00:00Z",
+    "updatedAt": "2025-04-11T09:00:00Z"
+  },
+  {
+    "id": "o005",
+    "customerId": "c003",
+    "items": [
+      {"productId": "p006", "name": "Desk Lamp", "quantity": 1, "unitPrice": 75.25},
+      {"productId": "p007", "name": "Cable Organizer", "quantity": 2, "unitPrice": 12.50},
+      {"productId": "p008", "name": "Sticky Notes Bundle", "quantity": 3, "unitPrice": 25.00}
+    ],
+    "total": 175.25,
+    "status": "DELIVERED",
+    "createdAt": "2025-03-10T12:00:00Z",
+    "updatedAt": "2025-03-20T08:00:00Z"
+  }
+]

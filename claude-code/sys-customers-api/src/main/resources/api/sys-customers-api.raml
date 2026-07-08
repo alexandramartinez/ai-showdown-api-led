@@ -1,0 +1,82 @@
+#%RAML 1.0
+title: System API - Customers
+version: v1
+baseUri: http://localhost:8083/api
+mediaType: application/json
+
+types:
+  Customer: !include dataTypes/Customer.raml
+  NewCustomer: !include dataTypes/NewCustomer.raml
+  Error: !include dataTypes/Error.raml
+
+traits:
+  hasServerError: !include traits/hasServerError.raml
+
+/customers:
+  get:
+    description: List all customers.
+    responses:
+      200:
+        body:
+          application/json:
+            type: Customer[]
+            example: !include examples/customers.json
+  post:
+    description: Create a new customer.
+    body:
+      application/json:
+        type: NewCustomer
+        example: !include examples/new-customer.json
+    responses:
+      201:
+        body:
+          application/json:
+            type: Customer
+            example: !include examples/customer.json
+      400:
+        body:
+          application/json:
+            type: Error
+  /{customerId}:
+    uriParameters:
+      customerId:
+        type: string
+        description: Unique customer identifier (UUID).
+    get:
+      description: Get one customer's details.
+      responses:
+        200:
+          body:
+            application/json:
+              type: Customer
+              example: !include examples/customer.json
+        404:
+          body:
+            application/json:
+              type: Error
+    put:
+      description: Edit an existing customer's details.
+      body:
+        application/json:
+          type: NewCustomer
+          example: !include examples/new-customer.json
+      responses:
+        200:
+          body:
+            application/json:
+              type: Customer
+              example: !include examples/customer.json
+        404:
+          body:
+            application/json:
+              type: Error
+    delete:
+      description: >
+        Delete a customer. This System API performs an unconditional delete;
+        the "only if no orders" business rule is enforced by the Process API.
+      responses:
+        204:
+        404:
+          body:
+            application/json:
+              type: Error

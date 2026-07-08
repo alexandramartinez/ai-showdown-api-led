@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <munit:config name="exp-customer-orders-api-test.xml" minMuleVersion="4.9.0"/>
+
+    <!-- The headline channel value-add: GET one customer returns profile + embedded orders. -->
+    <munit:test name="get-customer-aggregates-orders">
+        <munit:behavior>
+            <!-- customer fetch -->
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="path" whereValue="/customers/{customerId}"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- { id: 'c1', firstName: 'Ada', lastName: 'Lovelace', email: 'ada@example.com', createdAt: '2026-01-04T10:15:00Z' }]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+            <!-- orders fetch -->
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="path" whereValue="/customers/{customerId}/orders"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- [ { id: 'o1', customerId: 'c1', status: 'PAID', total: 10, currency: 'USD', items: [], createdAt: '2026-01-10T12:00:00Z' }, { id: 'o2', customerId: 'c1', status: 'NEW', total: 20, currency: 'USD', items: [], createdAt: '2026-01-11T12:00:00Z' } ]]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: 'c1' } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.orderCount]" is="#[MunitTools::equalTo(2)]"/>
+            <munit-tools:assert-that expression="#[sizeOf(payload.orders)]" is="#[MunitTools::equalTo(2)]"/>
+            <munit-tools:assert-that expression="#[payload.firstName]" is="#[MunitTools::equalTo('Ada')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo('200')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <!-- A missing customer must propagate the 404 (no orders call, no aggregate). -->
+    <munit:test name="get-missing-customer-propagates-404">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="path" whereValue="/customers/{customerId}"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- { error: { code: 'NOT_FOUND' } }]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 404 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: 'nope' } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(404)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <!-- Relay preserves the downstream 409 from the delete-guard. -->
+    <munit:test name="delete-relays-409-from-process">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref" whereValue="prcConfig"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- { error: { code: 'CUSTOMER_HAS_ORDERS' } }]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 409 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: 'c1' } }]"/>
+            </munit:set-event>
+            <flow-ref name="delete:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(409)]"/>
+            <munit-tools:assert-that expression="#[payload.error.code]" is="#[MunitTools::equalTo('CUSTOMER_HAS_ORDERS')]"/>
+        </munit:validation>
+    </munit:test>
+</mule>

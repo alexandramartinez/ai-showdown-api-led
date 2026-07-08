@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ===== GET /customers ===== -->
+    <flow name="prc-list-customers-flow" doc:name="PRC List Customers Flow" doc:description="Delegates to customer-sys-api and returns all customers">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers" allowedMethods="GET" doc:name="GET /customers" doc:description="Inbound REST call to list all customers">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <http:request config-ref="Customer_Sys_API_Request_config" method="GET" path="/customers" doc:name="GET customers → sys API" doc:description="Calls customer-sys-api to retrieve all customers">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores response status from customer-sys-api"/>
+        <logger level="INFO" message="[prc-api] GET /customers → #[vars.httpStatus]" doc:name="Log" doc:description="Logs delegation result"/>
+    </flow>
+
+    <!-- ===== GET /customers/{customerId} ===== -->
+    <flow name="prc-get-customer-flow" doc:name="PRC Get Customer Flow" doc:description="Delegates to customer-sys-api and returns a single customer or 404">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}" allowedMethods="GET" doc:name="GET /customers/{customerId}" doc:description="Inbound REST call to get a customer by ID">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <http:request config-ref="Customer_Sys_API_Request_config" method="GET" path="#['/customers/' ++ vars.customerId]" doc:name="GET customer → sys API" doc:description="Calls customer-sys-api to get customer by ID">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores response status from customer-sys-api"/>
+        <logger level="INFO" message="#['[prc-api] GET /customers/' ++ vars.customerId ++ ' → ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs delegation result"/>
+    </flow>
+
+    <!-- ===== GET /customers/{customerId}/orders ===== -->
+    <flow name="prc-get-customer-orders-flow" doc:name="PRC Get Customer Orders Flow" doc:description="Retrieves all orders for a customer by calling orders-sys-api filtered by customerId">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}/orders" allowedMethods="GET" doc:name="GET /customers/{customerId}/orders" doc:description="Inbound REST call to list a customer's orders">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param for filtering"/>
+        <http:request config-ref="Orders_Sys_API_Request_config" method="GET" path="/orders" doc:name="GET orders?customerId → sys API" doc:description="Calls orders-sys-api filtered by customerId">
+            <http:query-params>#[{"customerId": vars.customerId}]</http:query-params>
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores response status from orders-sys-api"/>
+        <logger level="INFO" message="#['[prc-api] GET /customers/' ++ vars.customerId ++ '/orders → ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs orders retrieval result"/>
+    </flow>
+
+    <!-- ===== GET /customers/{customerId}/orders/{orderId} ===== -->
+    <flow name="prc-get-customer-order-flow" doc:name="PRC Get Customer Order Flow" doc:description="Retrieves a specific order and validates ownership — 404 if not found or belongs to different customer">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}/orders/{orderId}" allowedMethods="GET" doc:name="GET /customers/{customerId}/orders/{orderId}" doc:description="Inbound REST call to get a specific order scoped to a customer">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param for ownership validation"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]" doc:name="Store orderId" doc:description="Captures orderId URI param"/>
+        <http:request config-ref="Orders_Sys_API_Request_config" method="GET" path="#['/orders/' ++ vars.orderId]" doc:name="GET order → sys API" doc:description="Calls orders-sys-api to retrieve the order by ID">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="sysApiStatus" value="#[attributes.statusCode]" doc:name="Capture sys status" doc:description="Stores the orders-sys-api response status for routing"/>
+        <choice doc:name="Order found + owned by customer?" doc:description="Checks order existence and customer ownership">
+            <when expression="#[vars.sysApiStatus != 200]" doc:name="Order not found" doc:description="orders-sys-api returned non-200">
+                <set-variable variableName="httpStatus" value="404" doc:name="Set 404" doc:description="Order does not exist"/>
+                <ee:transform doc:name="404 body" doc:description="JSON 404 error response for missing order">
+                    <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "Not Found", message: "Order '" ++ vars.orderId ++ "' was not found", statusCode: 404}]]></ee:set-payload></ee:message>
+                </ee:transform>
+            </when>
+            <when expression="#[payload.customerId != vars.customerId]" doc:name="Wrong customer" doc:description="Order exists but owned by a different customer">
+                <set-variable variableName="httpStatus" value="404" doc:name="Set 404" doc:description="Ownership mismatch — return 404 to avoid data leakage"/>
+                <ee:transform doc:name="Ownership 404 body" doc:description="JSON 404 response for order not belonging to this customer">
+                    <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "Not Found", message: "Order '" ++ vars.orderId ++ "' not found for customer '" ++ vars.customerId ++ "'", statusCode: 404}]]></ee:set-payload></ee:message>
+                </ee:transform>
+            </when>
+            <otherwise doc:name="Valid — return order" doc:description="Order found and owned by the correct customer">
+                <set-variable variableName="httpStatus" value="200" doc:name="Set 200" doc:description="Ownership verified, return 200"/>
+            </otherwise>
+        </choice>
+        <logger level="INFO" message="#['[prc-api] GET /customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ ' → ' ++ (vars.httpStatus default '200')]" doc:name="Log" doc:description="Logs order ownership check result"/>
+    </flow>
+
+    <!-- ===== POST /customers ===== -->
+    <flow name="prc-create-customer-flow" doc:name="PRC Create Customer Flow" doc:description="Delegates customer creation to customer-sys-api and returns 201 Created">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers" allowedMethods="POST" doc:name="POST /customers" doc:description="Inbound REST call to create a new customer">
+            <http:response statusCode="#[vars.httpStatus default 201]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <http:request config-ref="Customer_Sys_API_Request_config" method="POST" path="/customers" doc:name="POST customer → sys API" doc:description="Calls customer-sys-api to persist the new customer">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores response status from customer-sys-api"/>
+        <logger level="INFO" message="[prc-api] POST /customers → #[vars.httpStatus]" doc:name="Log" doc:description="Logs customer creation delegation result"/>
+    </flow>
+
+    <!-- ===== PUT /customers/{customerId} ===== -->
+    <flow name="prc-update-customer-flow" doc:name="PRC Update Customer Flow" doc:description="Delegates customer update to customer-sys-api and returns updated resource or 404">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}" allowedMethods="PUT" doc:name="PUT /customers/{customerId}" doc:description="Inbound REST call to update an existing customer">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <http:request config-ref="Customer_Sys_API_Request_config" method="PUT" path="#['/customers/' ++ vars.customerId]" doc:name="PUT customer → sys API" doc:description="Calls customer-sys-api to update the customer by ID">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores response status from customer-sys-api"/>
+        <logger level="INFO" message="#['[prc-api] PUT /customers/' ++ vars.customerId ++ ' → ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs customer update delegation result"/>
+    </flow>
+
+    <!-- ===== DELETE /customers/{customerId} — BUSINESS RULE: no orders guard ===== -->
+    <flow name="prc-delete-customer-flow" doc:name="PRC Delete Customer Flow" doc:description="Business rule: checks for existing orders first. Returns 409 Conflict if orders exist; otherwise delegates deletion to customer-sys-api.">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}" allowedMethods="DELETE" doc:name="DELETE /customers/{customerId}" doc:description="Inbound REST call to delete a customer — enforces no-active-orders business rule">
+            <http:response statusCode="#[vars.httpStatus default 204]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param for order check and delete call"/>
+        <http:request config-ref="Orders_Sys_API_Request_config" method="GET" path="/orders" doc:name="Check existing orders for customer" doc:description="Calls orders-sys-api to verify whether this customer has any orders before allowing deletion">
+            <http:query-params>#[{"customerId": vars.customerId}]</http:query-params>
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <choice doc:name="Has existing orders?" doc:description="Business rule gate: cannot delete customer if orders exist">
+            <when expression="#[sizeOf(payload) > 0]" doc:name="Orders exist — reject" doc:description="Customer has orders attached, deletion is not allowed">
+                <set-variable variableName="httpStatus" value="409" doc:name="Set 409 Conflict" doc:description="Sets HTTP response to 409 Conflict — customer has linked orders"/>
+                <ee:transform doc:name="Build 409 conflict body" doc:description="Constructs a JSON 409 error explaining the customer cannot be deleted while orders exist">
+                    <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Conflict",
+    message: "Customer '" ++ vars.customerId ++ "' cannot be deleted because they have " ++ (sizeOf(payload) as String) ++ " existing order(s). Delete all orders first.",
+    statusCode: 409,
+    orderCount: sizeOf(payload)
+}]]></ee:set-payload></ee:message>
+                </ee:transform>
+            </when>
+            <otherwise doc:name="No orders — proceed with delete" doc:description="Customer has no orders, safe to delegate deletion to system API">
+                <http:request config-ref="Customer_Sys_API_Request_config" method="DELETE" path="#['/customers/' ++ vars.customerId]" doc:name="DELETE customer → sys API" doc:description="Calls customer-sys-api to delete the customer after confirming no orders exist">
+                    <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+                </http:request>
+                <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores response status from customer-sys-api delete operation"/>
+            </otherwise>
+        </choice>
+        <logger level="INFO" message="#['[prc-api] DELETE /customers/' ++ vars.customerId ++ ' → ' ++ (vars.httpStatus default '204')]" doc:name="Log" doc:description="Logs delete result including business rule outcome"/>
+    </flow>
+
+    <!-- ===== POST /customers/{customerId}/orders ===== -->
+    <flow name="prc-create-customer-order-flow" doc:name="PRC Create Customer Order Flow" doc:description="Validates customer exists, then creates a new order attached to that customer via orders-sys-api">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}/orders" allowedMethods="POST" doc:name="POST /customers/{customerId}/orders" doc:description="Inbound REST call to create a new order for a specific customer">
+            <http:response statusCode="#[vars.httpStatus default 201]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId from URI for customer validation and order creation"/>
+        <set-variable variableName="orderPayload" value="#[payload]" doc:name="Store order payload" doc:description="Preserves the incoming order request body before making the customer validation call"/>
+        <http:request config-ref="Customer_Sys_API_Request_config" method="GET" path="#['/customers/' ++ vars.customerId]" doc:name="Validate customer exists" doc:description="Calls customer-sys-api to verify the target customer exists before creating the order">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="customerCheckStatus" value="#[attributes.statusCode]" doc:name="Capture customer check status" doc:description="Stores the customer lookup response status for routing"/>
+        <choice doc:name="Customer found?" doc:description="Routes based on whether the target customer exists">
+            <when expression="#[vars.customerCheckStatus != 200]" doc:name="Customer not found — reject" doc:description="Cannot create an order for a non-existent customer">
+                <set-variable variableName="httpStatus" value="404" doc:name="Set 404" doc:description="Target customer does not exist"/>
+                <ee:transform doc:name="404 customer not found" doc:description="JSON 404 error response when the target customer for the order does not exist">
+                    <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "Not Found", message: "Customer '" ++ vars.customerId ++ "' was not found. Cannot create order.", statusCode: 404}]]></ee:set-payload></ee:message>
+                </ee:transform>
+            </when>
+            <otherwise doc:name="Customer exists — create order" doc:description="Customer validated, proceed to create the order in orders-sys-api">
+                <ee:transform doc:name="Inject customerId into order body" doc:description="Merges the URI customerId into the order request payload before forwarding to orders-sys-api">
+                    <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.orderPayload ++ {customerId: vars.customerId}]]></ee:set-payload></ee:message>
+                </ee:transform>
+                <http:request config-ref="Orders_Sys_API_Request_config" method="POST" path="/orders" doc:name="POST order → sys API" doc:description="Calls orders-sys-api to create the new order with the customerId injected">
+                    <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+                </http:request>
+                <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores response status from orders-sys-api"/>
+            </otherwise>
+        </choice>
+        <logger level="INFO" message="#['[prc-api] POST /customers/' ++ vars.customerId ++ '/orders → ' ++ (vars.httpStatus default '201')]" doc:name="Log" doc:description="Logs order creation result"/>
+    </flow>
+
+    <!-- ===== PUT /customers/{customerId}/orders/{orderId} ===== -->
+    <flow name="prc-update-customer-order-flow" doc:name="PRC Update Customer Order Flow" doc:description="Validates order ownership before delegating update to orders-sys-api">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}/orders/{orderId}" allowedMethods="PUT" doc:name="PUT /customers/{customerId}/orders/{orderId}" doc:description="Inbound REST call to update an order scoped to a customer">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId for ownership validation"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]" doc:name="Store orderId" doc:description="Captures orderId URI param"/>
+        <set-variable variableName="updatePayload" value="#[payload]" doc:name="Store update payload" doc:description="Preserves the incoming update body before ownership check"/>
+        <http:request config-ref="Orders_Sys_API_Request_config" method="GET" path="#['/orders/' ++ vars.orderId]" doc:name="Fetch order for ownership check" doc:description="Retrieves the order to verify it belongs to the specified customer before updating">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="orderCheckStatus" value="#[attributes.statusCode]" doc:name="Capture order check status" doc:description="Stores orders-sys-api response status for ownership routing"/>
+        <choice doc:name="Order found + owned?" doc:description="Validates order exists and belongs to this customer before applying update">
+            <when expression="#[vars.orderCheckStatus != 200 or payload.customerId != vars.customerId]" doc:name="Not found or wrong customer" doc:description="Order does not exist or does not belong to this customer">
+                <set-variable variableName="httpStatus" value="404" doc:name="Set 404" doc:description="Order not found or ownership mismatch"/>
+                <ee:transform doc:name="404 body" doc:description="JSON 404 error for order not found or not owned by customer">
+                    <ee:message><ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "Not Found", message: "Order '" ++ vars.orderId ++ "' not found for customer '" ++ vars.customerId ++ "'", statusCode: 404}]]></ee:set-payload></ee:message>
+                </ee:transform>
+            </when>
+            <otherwise doc:name="Valid — delegate update" doc:description="Order exists and is owned by the correct customer, proceed with update">
+                <set-payload value="#[vars.updatePayload]" doc:name="Restore update payload" doc:description="Restores the original update body to send to orders-sys-api"/>
+                <http:request config-ref="Orders_Sys_API_Request_config" method="PUT" path="#['/orders/' ++ vars.orderId]" doc:name="PUT order → sys API" doc:description="Calls orders-sys-api to apply the update to the order">
+                    <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+                </http:request>
+                <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores response status from orders-sys-api update"/>
+            </otherwise>
+        </choice>
+        <logger level="INFO" message="#['[prc-api] PUT /customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ ' → ' ++ (vars.httpStatus default '200')]" doc:name="Log" doc:description="Logs order update result"/>
+    </flow>
+
+</mule>

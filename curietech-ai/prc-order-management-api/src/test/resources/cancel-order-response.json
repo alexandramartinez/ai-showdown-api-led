@@ -1,0 +1,9 @@
+{
+  "orderId": "ORD-001",
+  "customerId": "CUST-001",
+  "status": "CANCELLED",
+  "items": [
+    { "sku": "SKU-101", "quantity": 2 },
+    { "sku": "SKU-202", "quantity": 1 }
+  ]
+}

@@ -1,0 +1,100 @@
+#%RAML 1.0
+title: Customer Management Process API
+version: v1
+mediaType: application/json
+description: |
+  PROCESS-layer API that orchestrates customer lifecycle business logic.
+  It does NOT own data; it delegates to the SYSTEM layer (sys-customers-api,
+  sys-orders-api) over HTTP and enforces cross-domain business rules.
+
+types:
+  Customer:
+    type: object
+    properties:
+      id?: string
+      firstName: string
+      lastName: string
+      email: string
+      phone?: string
+  CustomerInput:
+    type: object
+    properties:
+      firstName: string
+      lastName: string
+      email: string
+      phone?: string
+  Error:
+    type: object
+    properties:
+      error: string
+      message: string
+
+/customers:
+  get:
+    description: List all customers (proxied from sys-customers-api).
+    responses:
+      200:
+        body:
+          application/json:
+            type: Customer[]
+  post:
+    description: Create a customer after validation, then delegate to sys-customers-api.
+    body:
+      application/json:
+        type: CustomerInput
+    responses:
+      201:
+        body:
+          application/json:
+            type: Customer
+      400:
+        body:
+          application/json:
+            type: Error
+  /{customerId}:
+    uriParameters:
+      customerId:
+        type: string
+    get:
+      description: Get a single customer by id (proxied from sys-customers-api).
+      responses:
+        200:
+          body:
+            application/json:
+              type: Customer
+        404:
+          body:
+            application/json:
+              type: Error
+    put:
+      description: Update a customer after validation, then delegate to sys-customers-api.
+      body:
+        application/json:
+          type: CustomerInput
+      responses:
+        200:
+          body:
+            application/json:
+              type: Customer
+        400:
+          body:
+            application/json:
+              type: Error
+        404:
+          body:
+            application/json:
+              type: Error
+    delete:
+      description: |
+        Delete a customer ONLY if the customer has no orders.
+        The API first checks sys-orders-api; if orders exist a 409 is returned.
+      responses:
+        204:
+        404:
+          body:
+            application/json:
+              type: Error
+        409:
+          body:
+            application/json:
+              type: Error

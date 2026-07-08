@@ -1,0 +1,110 @@
+#%RAML 1.0
+title: sys-orders-api
+version: v1
+mediaType: application/json
+description: |
+  System-layer API exposing raw CRUD over an in-memory (ObjectStore) mock order datastore.
+
+types:
+  OrderItem:
+    type: object
+    properties:
+      productId: string
+      name: string
+      quantity: integer
+      unitPrice: number
+  Order:
+    type: object
+    properties:
+      id?: string
+      customerId: string
+      status?:
+        type: string
+        enum: [NEW, CONFIRMED, SHIPPED, CANCELLED]
+      items: OrderItem[]
+      totalAmount?: number
+      createdAt?: string
+      updatedAt?: string
+  StatusUpdate:
+    type: object
+    properties:
+      status:
+        type: string
+        enum: [NEW, CONFIRMED, SHIPPED, CANCELLED]
+  Error:
+    type: object
+    properties:
+      error: string
+      message?: string
+
+/orders:
+  get:
+    description: Return all orders, optionally filtered by customerId
+    queryParameters:
+      customerId?: string
+    responses:
+      200:
+        body:
+          application/json:
+            type: Order[]
+  post:
+    description: Create a new order
+    body:
+      application/json:
+        type: Order
+    responses:
+      201:
+        body:
+          application/json:
+            type: Order
+  /{orderId}:
+    uriParameters:
+      orderId: string
+    get:
+      description: Retrieve a single order by id
+      responses:
+        200:
+          body:
+            application/json:
+              type: Order
+        404:
+          body:
+            application/json:
+              type: Error
+    put:
+      description: Update an existing order
+      body:
+        application/json:
+          type: Order
+      responses:
+        200:
+          body:
+            application/json:
+              type: Order
+        404:
+          body:
+            application/json:
+              type: Error
+    delete:
+      description: Delete an order
+      responses:
+        204:
+        404:
+          body:
+            application/json:
+              type: Error
+    /status:
+      patch:
+        description: Update only the status of an order
+        body:
+          application/json:
+            type: StatusUpdate
+        responses:
+          200:
+            body:
+              application/json:
+                type: Order
+          404:
+            body:
+              application/json:
+                type: Error

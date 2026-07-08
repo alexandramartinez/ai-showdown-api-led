@@ -1,0 +1,15 @@
+http:
+  host: "0.0.0.0"
+  port: "8082"
+  basePath: "/api"
+
+# Downstream System APIs.
+sys:
+  customers:
+    host: "localhost"
+    port: "8083"
+    basePath: "/api"
+  orders:
+    host: "localhost"
+    port: "8084"
+    basePath: "/api"

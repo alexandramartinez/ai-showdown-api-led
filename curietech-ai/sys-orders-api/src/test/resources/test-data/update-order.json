@@ -1,0 +1,7 @@
+{
+  "customerId": "CUST-001",
+  "status": "CONFIRMED",
+  "items": [
+    { "productId": "P-100", "name": "Widget", "quantity": 4, "unitPrice": 10.00 }
+  ]
+}

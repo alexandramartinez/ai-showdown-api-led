@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+	xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xsi:schemaLocation="
+		http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+		http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+		http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
+		http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+
+	<munit:config name="sys-customers-api-test.xml" />
+
+	<!-- Reset and re-seed the in-memory store before every test for determinism -->
+	<munit:before-test name="setup-customer-store" description="Clear and re-seed the object store">
+		<os:clear objectStore="customerStore" doc:name="Clear Store" />
+		<flow-ref name="sys-customers-seed-flow" doc:name="Seed Store" />
+	</munit:before-test>
+
+	<!-- GET /customers -> array of all seeded customers -->
+	<munit:test name="get-all-customers-test" description="GET /customers returns all seeded customers">
+		<munit:execution>
+			<flow-ref name="get:\customers:sys-customers-api-config" doc:name="Call Get All" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert 5 customers"
+				expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(5)]" />
+			<munit-tools:assert-that doc:name="Assert first id"
+				expression="#[payload[0].id]" is="#[MunitTools::equalTo('CUST-001')]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- GET /customers/{id} -> found -->
+	<munit:test name="get-customer-found-test" description="GET /customers/{id} returns a customer when present">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ uriParams: { customerId: 'CUST-002' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="get:\customers\(customerId):sys-customers-api-config" doc:name="Call Get One" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert id"
+				expression="#[payload.id]" is="#[MunitTools::equalTo('CUST-002')]" />
+			<munit-tools:assert-that doc:name="Assert firstName"
+				expression="#[payload.firstName]" is="#[MunitTools::equalTo('Bob')]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- GET /customers/{id} -> 404 not found -->
+	<munit:test name="get-customer-not-found-test" description="GET /customers/{id} returns 404 when missing">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ uriParams: { customerId: 'CUST-999' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="get:\customers\(customerId):sys-customers-api-config" doc:name="Call Get One" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert error"
+				expression="#[payload.error]" is="#[MunitTools::equalTo('CUSTOMER_NOT_FOUND')]" />
+			<munit-tools:assert-that doc:name="Assert 404"
+				expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(404)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- POST /customers -> create -->
+	<munit:test name="post-customer-test" description="POST /customers creates a new customer with generated id">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:payload value="#[MunitTools::getResourceAsString('data/new-customer.json')]"
+					mediaType="application/json" encoding="UTF-8" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="post:\customers:sys-customers-api-config" doc:name="Call Create" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert generated id"
+				expression="#[payload.id]" is="#[MunitTools::equalTo('CUST-006')]" />
+			<munit-tools:assert-that doc:name="Assert firstName"
+				expression="#[payload.firstName]" is="#[MunitTools::equalTo('Frank')]" />
+			<munit-tools:assert-that doc:name="Assert createdAt set"
+				expression="#[payload.createdAt]" is="#[MunitTools::notNullValue()]" />
+			<munit-tools:assert-that doc:name="Assert 201"
+				expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(201)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- PUT /customers/{id} -> update -->
+	<munit:test name="put-customer-test" description="PUT /customers/{id} updates an existing customer">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:payload value="#[MunitTools::getResourceAsString('data/update-customer.json')]"
+					mediaType="application/json" encoding="UTF-8" />
+				<munit:attributes value="#[{ uriParams: { customerId: 'CUST-002' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="put:\customers\(customerId):sys-customers-api-config" doc:name="Call Update" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert id preserved"
+				expression="#[payload.id]" is="#[MunitTools::equalTo('CUST-002')]" />
+			<munit-tools:assert-that doc:name="Assert firstName updated"
+				expression="#[payload.firstName]" is="#[MunitTools::equalTo('Bobby')]" />
+			<munit-tools:assert-that doc:name="Assert lastName kept"
+				expression="#[payload.lastName]" is="#[MunitTools::equalTo('Smith')]" />
+			<munit-tools:assert-that doc:name="Assert phone updated"
+				expression="#[payload.phone]" is="#[MunitTools::equalTo('+1-202-555-9999')]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- PUT /customers/{id} -> 404 -->
+	<munit:test name="put-customer-not-found-test" description="PUT /customers/{id} returns 404 when missing">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:payload value="#[MunitTools::getResourceAsString('data/update-customer.json')]"
+					mediaType="application/json" encoding="UTF-8" />
+				<munit:attributes value="#[{ uriParams: { customerId: 'CUST-999' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="put:\customers\(customerId):sys-customers-api-config" doc:name="Call Update" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert error"
+				expression="#[payload.error]" is="#[MunitTools::equalTo('CUSTOMER_NOT_FOUND')]" />
+			<munit-tools:assert-that doc:name="Assert 404"
+				expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(404)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- DELETE /customers/{id} -> 204 then confirm removal -->
+	<munit:test name="delete-customer-test" description="DELETE /customers/{id} removes the customer">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ uriParams: { customerId: 'CUST-003' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="delete:\customers\(customerId):sys-customers-api-config" doc:name="Call Delete" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert 204"
+				expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(204)]" />
+			<os:contains key="CUST-003" objectStore="customerStore" target="stillThere" doc:name="Check Removed" />
+			<munit-tools:assert-that doc:name="Assert removed"
+				expression="#[vars.stillThere]" is="#[MunitTools::equalTo(false)]" />
+		</munit:validation>
+	</munit:test>
+
+	<!-- DELETE /customers/{id} -> 404 -->
+	<munit:test name="delete-customer-not-found-test" description="DELETE /customers/{id} returns 404 when missing">
+		<munit:behavior>
+			<munit:set-event>
+				<munit:attributes value="#[{ uriParams: { customerId: 'CUST-999' } }]" mediaType="application/java" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="delete:\customers\(customerId):sys-customers-api-config" doc:name="Call Delete" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that doc:name="Assert error"
+				expression="#[payload.error]" is="#[MunitTools::equalTo('CUSTOMER_NOT_FOUND')]" />
+			<munit-tools:assert-that doc:name="Assert 404"
+				expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(404)]" />
+		</munit:validation>
+	</munit:test>
+
+</mule>

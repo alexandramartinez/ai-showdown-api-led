@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ============ APIkit router ============ -->
+    <flow name="exp-customer-orders-api-main">
+        <http:listener config-ref="httpListenerConfig" path="${http.basePath}/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[(vars.outboundHeaders default {}) ++ { 'X-Correlation-Id': correlationId }]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[(vars.outboundHeaders default {}) ++ { 'X-Correlation-Id': correlationId }]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="apiConfig"/>
+        <error-handler ref="globalErrorHandler"/>
+    </flow>
+
+    <flow name="exp-customer-orders-api-console">
+        <http:listener config-ref="httpListenerConfig" path="${http.basePath}/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+        </http:listener>
+        <apikit:console config-ref="apiConfig"/>
+        <error-handler ref="globalErrorHandler"/>
+    </flow>
+
+    <!-- ============================================================
+         CUSTOMER operations (relay to Process API)
+         ============================================================ -->
+
+    <flow name="get:\customers:apiConfig">
+        <flow-ref name="relayGet"/>
+    </flow>
+
+    <flow name="post:\customers:application\json:apiConfig">
+        <http:request method="POST" config-ref="prcConfig" path="/customers" target="resp" targetValue="#[message]">
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <!-- GET one customer AGGREGATED with orders (channel value-add). -->
+    <flow name="get:\customers\(customerId):apiConfig">
+        <!-- 1) fetch the customer -->
+        <http:request method="GET" config-ref="prcConfig" path="/customers/{customerId}" target="custResp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <choice doc:name="customer found?">
+            <when expression="#[vars.custResp.attributes.statusCode != 200]">
+                <set-payload value="#[vars.custResp.payload]"/>
+                <set-variable variableName="httpStatus" value="#[vars.custResp.attributes.statusCode]"/>
+            </when>
+            <otherwise>
+                <!-- 2) fetch their orders -->
+                <http:request method="GET" config-ref="prcConfig" path="/customers/{customerId}/orders" target="ordersResp" targetValue="#[message]">
+                    <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+                    <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+                    <http:response-validator>
+                        <http:success-status-code-validator values="200..599"/>
+                    </http:response-validator>
+                </http:request>
+                <!-- 3) compose the aggregate for the client -->
+                <ee:transform doc:name="aggregate customer + orders">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var cust = vars.custResp.payload
+var orders = (if (vars.ordersResp.attributes.statusCode == 200) vars.ordersResp.payload else []) default []
+---
+cust ++ {
+  orderCount: sizeOf(orders),
+  orders: orders
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable variableName="httpStatus" value="200"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <flow name="put:\customers\(customerId):application\json:apiConfig">
+        <http:request method="PUT" config-ref="prcConfig" path="/customers/{customerId}" target="resp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <flow name="delete:\customers\(customerId):apiConfig">
+        <http:request method="DELETE" config-ref="prcConfig" path="/customers/{customerId}" target="resp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <!-- ============================================================
+         ORDER operations (relay to Process API)
+         ============================================================ -->
+
+    <flow name="get:\customers\(customerId)\orders:apiConfig">
+        <http:request method="GET" config-ref="prcConfig" path="/customers/{customerId}/orders" target="resp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <flow name="post:\customers\(customerId)\orders:application\json:apiConfig">
+        <http:request method="POST" config-ref="prcConfig" path="/customers/{customerId}/orders" target="resp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <flow name="get:\customers\(customerId)\orders\(orderId):apiConfig">
+        <http:request method="GET" config-ref="prcConfig" path="/customers/{customerId}/orders/{orderId}" target="resp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId, orderId: attributes.uriParams.orderId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <flow name="put:\customers\(customerId)\orders\(orderId):application\json:apiConfig">
+        <http:request method="PUT" config-ref="prcConfig" path="/customers/{customerId}/orders/{orderId}" target="resp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId, orderId: attributes.uriParams.orderId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <flow name="post:\customers\(customerId)\orders\(orderId)\cancel:apiConfig">
+        <http:request method="POST" config-ref="prcConfig" path="/customers/{customerId}/orders/{orderId}/cancel" target="resp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId, orderId: attributes.uriParams.orderId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <flow name="delete:\customers\(customerId)\orders\(orderId):apiConfig">
+        <http:request method="DELETE" config-ref="prcConfig" path="/customers/{customerId}/orders/{orderId}" target="resp" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId, orderId: attributes.uriParams.orderId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </flow>
+
+    <!-- ============================================================
+         Shared relay helpers
+         ============================================================ -->
+
+    <!-- Simple GET relay for /customers (no uri params). -->
+    <sub-flow name="relayGet">
+        <http:request method="GET" config-ref="prcConfig" path="/customers" target="resp" targetValue="#[message]">
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="relayResponse"/>
+    </sub-flow>
+
+    <!-- Maps the captured downstream response (vars.resp) back to the caller, status preserved. -->
+    <sub-flow name="relayResponse">
+        <set-payload value="#[vars.resp.payload]"/>
+        <set-variable variableName="httpStatus" value="#[vars.resp.attributes.statusCode]"/>
+    </sub-flow>
+</mule>

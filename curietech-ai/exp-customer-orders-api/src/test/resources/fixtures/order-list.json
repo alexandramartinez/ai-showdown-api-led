@@ -1,0 +1,14 @@
+[
+  {
+    "id": "ORD-001",
+    "customerId": "CUST-10421",
+    "status": "PENDING",
+    "totalAmount": 173.18
+  },
+  {
+    "id": "ORD-002",
+    "customerId": "CUST-10421",
+    "status": "SHIPPED",
+    "totalAmount": 64.77
+  }
+]

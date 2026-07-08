@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <global-property name="mule.env" value="dev"/>
+    <configuration-properties file="config/config-${mule.env}.yaml"/>
+
+    <http:listener-config name="apiHttpListenerConfig" basePath="/api" doc:name="API HTTP Listener Config">
+        <http:listener-connection host="${http.host}" port="${http.port}"/>
+    </http:listener-config>
+
+    <http:request-config name="processHttpRequestConfig" doc:name="Process HTTP Request Config">
+        <http:request-connection protocol="HTTP"/>
+    </http:request-config>
+
+    <apikit:config name="exp-customer-orders-api-config" api="api/exp-customer-orders-api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" doc:name="Experience APIkit Config"/>
+
+    <error-handler name="global-api-error-handler">
+        <on-error-propagate type="HTTP:CONNECTIVITY, HTTP:TIMEOUT" enableNotifications="true" logException="true">
+            <ee:transform doc:name="Build Bad Gateway Error">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "BAD_GATEWAY"}]]></ee:set-payload>
+                </ee:message>
+                <ee:variables>
+                    <ee:set-variable variableName="httpStatus"><![CDATA[502]]></ee:set-variable>
+                </ee:variables>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:BAD_REQUEST" enableNotifications="true" logException="true">
+            <ee:transform doc:name="Build APIkit Bad Request Error">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "BAD_REQUEST", message: error.description default "Bad request"}]]></ee:set-payload>
+                </ee:message>
+                <ee:variables>
+                    <ee:set-variable variableName="httpStatus"><![CDATA[400]]></ee:set-variable>
+                </ee:variables>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:NOT_FOUND" enableNotifications="true" logException="true">
+            <ee:transform doc:name="Build APIkit Not Found Error">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "NOT_FOUND", message: "Resource not found"}]]></ee:set-payload>
+                </ee:message>
+                <ee:variables>
+                    <ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+                </ee:variables>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED" enableNotifications="true" logException="true">
+            <ee:transform doc:name="Build APIkit Method Not Allowed Error">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{error: "METHOD_NOT_ALLOWED", message: "Method not allowed"}]]></ee:set-payload>
+                </ee:message>
+                <ee:variables>
+                    <ee:set-variable variableName="httpStatus"><![CDATA[405]]></ee:set-variable>
+                </ee:variables>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="ANY" enableNotifications="true" logException="true">
+            <ee:transform doc:name="Build Generic Error">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "INTERNAL_SERVER_ERROR",
+  message: "Unexpected error while processing the request"
+}]]></ee:set-payload>
+                </ee:message>
+                <ee:variables>
+                    <ee:set-variable variableName="httpStatus"><![CDATA[500]]></ee:set-variable>
+                </ee:variables>
+            </ee:transform>
+        </on-error-propagate>
+    </error-handler>
+
+</mule>

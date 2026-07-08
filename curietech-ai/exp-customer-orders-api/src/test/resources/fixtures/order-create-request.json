@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "productId": "PROD-8821",
+      "quantity": 1,
+      "unitPrice": 249.99
+    }
+  ],
+  "shippingAddress": {
+    "street": "742 Evergreen Terrace",
+    "city": "Springfield"
+  }
+}

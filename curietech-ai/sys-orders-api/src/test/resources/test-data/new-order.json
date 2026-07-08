@@ -1,0 +1,7 @@
+{
+  "customerId": "CUST-002",
+  "items": [
+    { "productId": "P-1", "name": "Alpha", "quantity": 2, "unitPrice": 19.99 },
+    { "productId": "P-2", "name": "Beta", "quantity": 1, "unitPrice": 5.00 }
+  ]
+}

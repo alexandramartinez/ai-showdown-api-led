@@ -1,0 +1,108 @@
+#%RAML 1.0
+title: prc-order-management-api
+version: v1
+baseUri: http://localhost:8084/api
+mediaType: application/json
+
+types:
+  OrderItem:
+    type: object
+    properties:
+      sku: string
+      quantity: integer
+  Order:
+    type: object
+    properties:
+      orderId?: string
+      customerId?: string
+      status?: string
+      items: OrderItem[]
+      createdAt?: string
+  ErrorResponse:
+    type: object
+    properties:
+      error: string
+
+/customers:
+  /{customerId}:
+    uriParameters:
+      customerId: string
+    /orders:
+      get:
+        description: List orders for a customer.
+        responses:
+          200:
+            body:
+              application/json:
+                type: Order[]
+      post:
+        description: Create an order for an existing customer.
+        body:
+          application/json:
+            type: Order
+        responses:
+          201:
+            body:
+              application/json:
+                type: Order
+          400:
+            body:
+              application/json:
+                type: ErrorResponse
+          404:
+            body:
+              application/json:
+                type: ErrorResponse
+/orders:
+  /{orderId}:
+    uriParameters:
+      orderId: string
+    get:
+      description: Get an order by id.
+      responses:
+        200:
+          body:
+            application/json:
+              type: Order
+        404:
+          body:
+            application/json:
+              type: ErrorResponse
+    put:
+      description: Update an order. If customerId is supplied, it must exist.
+      body:
+        application/json:
+          type: Order
+      responses:
+        200:
+          body:
+            application/json:
+              type: Order
+        400:
+          body:
+            application/json:
+              type: ErrorResponse
+        404:
+          body:
+            application/json:
+              type: ErrorResponse
+    delete:
+      description: Delete an order from the system order API.
+      responses:
+        204:
+    /cancel:
+      post:
+        description: Cancel an order by changing status to CANCELLED. This does not delete the order.
+        responses:
+          200:
+            body:
+              application/json:
+                type: Order
+          404:
+            body:
+              application/json:
+                type: ErrorResponse
+          409:
+            body:
+              application/json:
+                type: ErrorResponse

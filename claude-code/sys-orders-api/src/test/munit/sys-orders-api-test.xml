@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+    <munit:config name="sys-orders-api-test.xml" minMuleVersion="4.9.0"/>
+
+    <munit:before-test name="reset-orders-table">
+        <try>
+            <munit-tools:remove-file path="./data-store/orders.json"/>
+            <error-handler>
+                <on-error-continue type="ANY"/>
+            </error-handler>
+        </try>
+    </munit:before-test>
+
+    <munit:test name="get-all-orders-returns-seed">
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ queryParams: {} }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\orders:apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(6)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="get-orders-filtered-by-customer">
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ queryParams: { customerId: '11111111-1111-1111-1111-111111111111' } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\orders:apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(2)]"/>
+            <munit-tools:assert-that expression="#[payload every ($.customerId == '11111111-1111-1111-1111-111111111111')]" is="#[MunitTools::equalTo(true)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="get-orders-filtered-empty-for-customer-without-orders">
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ queryParams: { customerId: '44444444-4444-4444-4444-444444444444' } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\orders:apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(0)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="create-order-computes-total-and-persists">
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload value="#[output application/json --- { customerId: '11111111-1111-1111-1111-111111111111', items: [ { sku: 'MG-002', name: 'Coffee Mug', qty: 2, price: 9.50 } ] }]"/>
+            </munit:set-event>
+            <flow-ref name="post:\orders:application\json:apiConfig"/>
+            <set-variable variableName="createdId" value="#[payload.id]"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.total]" is="#[MunitTools::equalTo(19.0)]"/>
+            <munit-tools:assert-that expression="#[payload.status]" is="#[MunitTools::equalTo('NEW')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="put-order-updates-status-to-cancelled">
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload value="#[output application/json --- { customerId: '11111111-1111-1111-1111-111111111111', status: 'CANCELLED', items: [ { sku: 'NB-007', name: 'Notebook', qty: 3, price: 14.00 } ] }]"/>
+                <munit:attributes value="#[{ uriParams: { orderId: 'aaaaaaaa-0000-0000-0000-000000000002' } }]"/>
+            </munit:set-event>
+            <flow-ref name="put:\orders\(orderId):application\json:apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.status]" is="#[MunitTools::equalTo('CANCELLED')]"/>
+            <munit-tools:assert-that expression="#[payload.id]" is="#[MunitTools::equalTo('aaaaaaaa-0000-0000-0000-000000000002')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="delete-order-then-get-is-404" expectedErrorType="APIKIT:NOT_FOUND">
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { orderId: 'aaaaaaaa-0000-0000-0000-000000000006' } }]"/>
+            </munit:set-event>
+            <flow-ref name="delete:\orders\(orderId):apiConfig"/>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { orderId: 'aaaaaaaa-0000-0000-0000-000000000006' } }]"/>
+            </munit:set-event>
+            <flow-ref name="get:\orders\(orderId):apiConfig"/>
+        </munit:execution>
+    </munit:test>
+</mule>

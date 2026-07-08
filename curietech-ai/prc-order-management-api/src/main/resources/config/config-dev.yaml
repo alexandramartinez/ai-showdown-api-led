@@ -1,0 +1,7 @@
+http:
+  port: "8084"
+sys:
+  orders:
+    baseUrl: "http://localhost:8082/api"
+  customers:
+    baseUrl: "http://localhost:8081/api"

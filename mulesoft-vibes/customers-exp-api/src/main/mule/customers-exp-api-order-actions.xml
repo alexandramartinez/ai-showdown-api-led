@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <!-- ===== PATCH /customers/{customerId}/orders/{orderId}/cancel ===== -->
+    <flow name="exp-cancel-customer-order-flow"
+        doc:name="EXP Cancel Customer Order Flow"
+        doc:description="Experience API: cancels an order (sets CANCELLED status) — process layer validates ownership. Order is not deleted.">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers/{customerId}/orders/{orderId}/cancel"
+            allowedMethods="PATCH"
+            doc:name="PATCH /customers/{customerId}/orders/{orderId}/cancel"
+            doc:description="Consumer-facing endpoint to cancel an order; process layer enforces ownership validation">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]"
+            doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"
+            doc:name="Store orderId" doc:description="Captures orderId URI param"/>
+        <http:request
+            config-ref="PRC_API_Request_config"
+            method="PATCH"
+            path="#['/customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ '/cancel']"
+            doc:name="PATCH cancel order → prc API"
+            doc:description="Delegates to prc-api which validates ownership and cancels the order">
+            <http:response-validator>
+                <http:success-status-code-validator values="1..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]"
+            doc:name="Capture status" doc:description="Stores HTTP status — 200 if cancelled, 404 if not found or wrong customer"/>
+        <logger level="INFO"
+            message="#['[exp-api] PATCH /customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ '/cancel → prc returned ' ++ vars.httpStatus]"
+            doc:name="Log" doc:description="Logs cancel order delegation result"/>
+    </flow>
+
+    <!-- ===== DELETE /customers/{customerId}/orders/{orderId} ===== -->
+    <flow name="exp-delete-customer-order-flow"
+        doc:name="EXP Delete Customer Order Flow"
+        doc:description="Experience API: permanently deletes an order — process layer validates ownership before deletion">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers/{customerId}/orders/{orderId}"
+            allowedMethods="DELETE"
+            doc:name="DELETE /customers/{customerId}/orders/{orderId}"
+            doc:description="Consumer-facing endpoint to delete an order; prc layer validates the order belongs to this customer">
+            <http:response statusCode="#[vars.httpStatus default 204]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]"
+            doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"
+            doc:name="Store orderId" doc:description="Captures orderId URI param"/>
+        <http:request
+            config-ref="PRC_API_Request_config"
+            method="DELETE"
+            path="#['/customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId]"
+            doc:name="DELETE order → prc API"
+            doc:description="Delegates to prc-api which validates ownership and permanently deletes the order">
+            <http:response-validator>
+                <http:success-status-code-validator values="1..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]"
+            doc:name="Capture status" doc:description="Stores HTTP status — 204 if deleted, 404 if not found or wrong customer"/>
+        <logger level="INFO"
+            message="#['[exp-api] DELETE /customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ ' → prc returned ' ++ vars.httpStatus]"
+            doc:name="Log" doc:description="Logs delete order delegation result"/>
+    </flow>
+
+</mule>

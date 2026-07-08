@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <!--
+      Reusable downstream helpers. Each returns the parsed body as payload and
+      exposes the HTTP status in vars.downstreamStatus so callers can branch.
+      response-validator=success-status-code-validator is DISABLED (we accept any
+      status) so a downstream 404 becomes a branchable value, not a raised error.
+      Correlation id is propagated on every hop for traceability.
+    -->
+
+    <sub-flow name="ensureCustomerExists">
+        <!-- Raises APP:NOT_FOUND if the customer id is unknown. Leaves payload untouched. -->
+        <set-variable variableName="savedPayload" value="#[payload]"/>
+        <http:request method="GET" config-ref="sysCustomersConfig"
+                      path="/customers/{customerId}" target="customerLookup" targetValue="#[message]">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <choice>
+            <when expression="#[vars.customerLookup.attributes.statusCode != 200]">
+                <raise-error type="APP:NOT_FOUND" description="Customer not found"/>
+            </when>
+        </choice>
+        <set-payload value="#[vars.savedPayload]"/>
+    </sub-flow>
+</mule>

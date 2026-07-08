@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ===== GET /customers ===== -->
+    <flow name="exp-list-customers-flow" doc:name="EXP List Customers Flow" doc:description="Experience API: returns all customers with consumer-friendly response shaping">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers" allowedMethods="GET"
+            doc:name="GET /customers" doc:description="Consumer-facing endpoint to list all customers">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <http:request config-ref="PRC_API_Request_config" method="GET" path="/customers"
+            doc:name="GET customers → prc API" doc:description="Delegates to customers-orders-prc-api to retrieve all customers">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status from process API response"/>
+        <logger level="INFO" message="[exp-api] GET /customers → prc returned #[vars.httpStatus]" doc:name="Log" doc:description="Logs list customers delegation result"/>
+    </flow>
+
+    <!-- ===== GET /customers/{customerId} ===== -->
+    <flow name="exp-get-customer-flow" doc:name="EXP Get Customer Flow" doc:description="Experience API: returns a single customer by ID with consumer-friendly error responses">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}" allowedMethods="GET"
+            doc:name="GET /customers/{customerId}" doc:description="Consumer-facing endpoint to retrieve a specific customer">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <http:request config-ref="PRC_API_Request_config" method="GET" path="#['/customers/' ++ vars.customerId]"
+            doc:name="GET customer → prc API" doc:description="Delegates to customers-orders-prc-api for single customer lookup">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status from process API response"/>
+        <logger level="INFO" message="#['[exp-api] GET /customers/' ++ vars.customerId ++ ' → prc returned ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs get customer result"/>
+    </flow>
+
+    <!-- ===== GET /customers/{customerId}/orders ===== -->
+    <flow name="exp-get-customer-orders-flow" doc:name="EXP Get Customer Orders Flow" doc:description="Experience API: returns all orders for a customer">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}/orders" allowedMethods="GET"
+            doc:name="GET /customers/{customerId}/orders" doc:description="Consumer-facing endpoint to list a customer's orders">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <http:request config-ref="PRC_API_Request_config" method="GET" path="#['/customers/' ++ vars.customerId ++ '/orders']"
+            doc:name="GET customer orders → prc API" doc:description="Delegates to prc-api to retrieve all orders for the customer">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status from process API response"/>
+        <logger level="INFO" message="#['[exp-api] GET /customers/' ++ vars.customerId ++ '/orders → prc returned ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs customer orders retrieval result"/>
+    </flow>
+
+    <!-- ===== GET /customers/{customerId}/orders/{orderId} ===== -->
+    <flow name="exp-get-customer-order-flow" doc:name="EXP Get Customer Order Flow" doc:description="Experience API: returns a specific order scoped to a customer">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}/orders/{orderId}" allowedMethods="GET"
+            doc:name="GET /customers/{customerId}/orders/{orderId}" doc:description="Consumer-facing endpoint to retrieve a specific order for a customer">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]" doc:name="Store orderId" doc:description="Captures orderId URI param"/>
+        <http:request config-ref="PRC_API_Request_config" method="GET" path="#['/customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId]"
+            doc:name="GET order → prc API" doc:description="Delegates to prc-api which validates ownership and returns the order">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status from process API response"/>
+        <logger level="INFO" message="#['[exp-api] GET /customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ ' → prc returned ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs specific order retrieval result"/>
+    </flow>
+
+    <!-- ===== POST /customers ===== -->
+    <flow name="exp-create-customer-flow" doc:name="EXP Create Customer Flow" doc:description="Experience API: creates a new customer and returns 201 Created with the created resource">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers" allowedMethods="POST"
+            doc:name="POST /customers" doc:description="Consumer-facing endpoint to create a new customer">
+            <http:response statusCode="#[vars.httpStatus default 201]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <http:request config-ref="PRC_API_Request_config" method="POST" path="/customers"
+            doc:name="POST customer → prc API" doc:description="Delegates customer creation to customers-orders-prc-api">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status from process API response"/>
+        <logger level="INFO" message="[exp-api] POST /customers → prc returned #[vars.httpStatus]" doc:name="Log" doc:description="Logs customer creation result"/>
+    </flow>
+
+    <!-- ===== PUT /customers/{customerId} ===== -->
+    <flow name="exp-update-customer-flow" doc:name="EXP Update Customer Flow" doc:description="Experience API: updates a customer and returns updated resource or consumer-friendly 404">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}" allowedMethods="PUT"
+            doc:name="PUT /customers/{customerId}" doc:description="Consumer-facing endpoint to update an existing customer">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <http:request config-ref="PRC_API_Request_config" method="PUT" path="#['/customers/' ++ vars.customerId]"
+            doc:name="PUT customer → prc API" doc:description="Delegates customer update to customers-orders-prc-api">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status from process API response"/>
+        <logger level="INFO" message="#['[exp-api] PUT /customers/' ++ vars.customerId ++ ' → prc returned ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs customer update result"/>
+    </flow>
+
+    <!-- ===== DELETE /customers/{customerId} ===== -->
+    <flow name="exp-delete-customer-flow" doc:name="EXP Delete Customer Flow" doc:description="Experience API: deletes a customer — process layer enforces no-orders guard and returns 409 Conflict if orders exist">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}" allowedMethods="DELETE"
+            doc:name="DELETE /customers/{customerId}" doc:description="Consumer-facing endpoint to delete a customer; 409 returned if active orders exist">
+            <http:response statusCode="#[vars.httpStatus default 204]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <http:request config-ref="PRC_API_Request_config" method="DELETE" path="#['/customers/' ++ vars.customerId]"
+            doc:name="DELETE customer → prc API" doc:description="Delegates to prc-api which checks for orders before deleting">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status — 204 if deleted, 409 if orders exist, 404 if not found"/>
+        <logger level="INFO" message="#['[exp-api] DELETE /customers/' ++ vars.customerId ++ ' → prc returned ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs customer delete result including business rule outcome"/>
+    </flow>
+
+    <!-- ===== POST /customers/{customerId}/orders ===== -->
+    <flow name="exp-create-customer-order-flow" doc:name="EXP Create Customer Order Flow" doc:description="Experience API: creates a new order for a customer — process layer validates customer exists">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}/orders" allowedMethods="POST"
+            doc:name="POST /customers/{customerId}/orders" doc:description="Consumer-facing endpoint to create a new order for a customer">
+            <http:response statusCode="#[vars.httpStatus default 201]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <http:request config-ref="PRC_API_Request_config" method="POST" path="#['/customers/' ++ vars.customerId ++ '/orders']"
+            doc:name="POST order → prc API" doc:description="Delegates to prc-api which validates the customer and creates the order">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status from process API response"/>
+        <logger level="INFO" message="#['[exp-api] POST /customers/' ++ vars.customerId ++ '/orders → prc returned ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs order creation result"/>
+    </flow>
+
+    <!-- ===== PUT /customers/{customerId}/orders/{orderId} ===== -->
+    <flow name="exp-update-customer-order-flow" doc:name="EXP Update Customer Order Flow" doc:description="Experience API: updates an order — process layer validates ownership">
+        <http:listener config-ref="HTTP_Listener_config" path="/customers/{customerId}/orders/{orderId}" allowedMethods="PUT"
+            doc:name="PUT /customers/{customerId}/orders/{orderId}" doc:description="Consumer-facing endpoint to update an order; prc layer validates ownership">
+            <http:response statusCode="#[vars.httpStatus default 200]"><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]"><http:body>#[payload]</http:body><http:headers>#[{'Content-Type': 'application/json'}]</http:headers></http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]" doc:name="Store customerId" doc:description="Captures customerId URI param"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]" doc:name="Store orderId" doc:description="Captures orderId URI param"/>
+        <http:request config-ref="PRC_API_Request_config" method="PUT" path="#['/customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId]"
+            doc:name="PUT order → prc API" doc:description="Delegates to prc-api which validates ownership and applies the update">
+            <http:response-validator><http:success-status-code-validator values="1..599"/></http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode]" doc:name="Capture status" doc:description="Stores HTTP status from process API response"/>
+        <logger level="INFO" message="#['[exp-api] PUT /customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ ' → prc returned ' ++ vars.httpStatus]" doc:name="Log" doc:description="Logs order update result"/>
+    </flow>
+
+</mule>

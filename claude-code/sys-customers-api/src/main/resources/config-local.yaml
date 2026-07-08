@@ -1,0 +1,10 @@
+http:
+  host: "0.0.0.0"
+  port: "8083"
+  basePath: "/api"
+
+# Directory where the mutable "table" file lives. On first write the app copies
+# the classpath seed (data/customers.seed.json) here, then reads/writes this file.
+data:
+  dir: "./data-store"
+  file: "customers.json"

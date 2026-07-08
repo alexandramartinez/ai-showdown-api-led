@@ -1,0 +1,12 @@
+{
+  "id": "aaaaaaaa-0000-0000-0000-000000000001",
+  "customerId": "11111111-1111-1111-1111-111111111111",
+  "status": "PAID",
+  "total": 129.98,
+  "currency": "USD",
+  "items": [
+    { "sku": "BK-001", "name": "The Art of Computer Programming", "qty": 1, "price": 99.99 },
+    { "sku": "PN-010", "name": "Fountain Pen", "qty": 2, "price": 15.00 }
+  ],
+  "createdAt": "2026-01-10T12:00:00Z"
+}

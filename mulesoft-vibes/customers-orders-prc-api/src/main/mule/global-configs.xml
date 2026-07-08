@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <configuration-properties
+        file="config.yaml"
+        doc:name="Config Properties"
+        doc:description="Loads application properties including HTTP port and downstream System API host/port configuration" />
+
+    <!-- Inbound: listens on port 8082 for process API consumers -->
+    <http:listener-config
+        name="HTTP_Listener_config"
+        doc:name="HTTP Listener Config"
+        doc:description="HTTP listener configuration for customers-orders-prc-api on port ${http.port}">
+        <http:listener-connection host="0.0.0.0" port="${http.port}" />
+    </http:listener-config>
+
+    <!-- Outbound: calls customer-sys-api on port 8083 -->
+    <http:request-config
+        name="Customer_Sys_API_Request_config"
+        basePath="${customer.sys.api.basePath}"
+        doc:name="Customer Sys API Request Config"
+        doc:description="HTTP request configuration for calling the customer-sys-api System API on port 8083">
+        <http:request-connection host="${customer.sys.api.host}" port="${customer.sys.api.port}" />
+    </http:request-config>
+
+    <!-- Outbound: calls orders-sys-api on port 8084 -->
+    <http:request-config
+        name="Orders_Sys_API_Request_config"
+        basePath="${orders.sys.api.basePath}"
+        doc:name="Orders Sys API Request Config"
+        doc:description="HTTP request configuration for calling the orders-sys-api System API on port 8084">
+        <http:request-connection host="${orders.sys.api.host}" port="${orders.sys.api.port}" />
+    </http:request-config>
+
+</mule>

@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <flow name="sys-orders-api-main">
+        <http:listener config-ref="httpListenerConfig" path="${http.basePath}/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="apiConfig"/>
+        <error-handler ref="globalErrorHandler"/>
+    </flow>
+
+    <flow name="sys-orders-api-console">
+        <http:listener config-ref="httpListenerConfig" path="${http.basePath}/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+        </http:listener>
+        <apikit:console config-ref="apiConfig"/>
+        <error-handler ref="globalErrorHandler"/>
+    </flow>
+
+    <!-- ============ GET /orders (optional ?customerId=) ============ -->
+    <flow name="get:\orders:apiConfig">
+        <flow-ref name="orders-readTable"/>
+        <ee:transform doc:name="filter by customerId when present">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var cid = attributes.queryParams.customerId
+---
+if (cid != null) payload filter ($.customerId == cid) else payload]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <set-variable variableName="httpStatus" value="200"/>
+    </flow>
+
+    <!-- ============ POST /orders ============ -->
+    <flow name="post:\orders:application\json:apiConfig">
+        <set-variable variableName="newOrder" value="#[payload]"/>
+        <flow-ref name="orders-readTable"/>
+        <ee:transform doc:name="build + append order">
+            <ee:variables>
+                <ee:set-variable variableName="created"><![CDATA[%dw 2.0
+output application/json
+var items = vars.newOrder.items default []
+---
+{
+  id: uuid(),
+  customerId: vars.newOrder.customerId,
+  status: vars.newOrder.status default "NEW",
+  total: sum(items map ((i) -> i.qty * i.price)),
+  currency: vars.newOrder.currency default "USD",
+  items: items,
+  createdAt: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+}]]></ee:set-variable>
+            </ee:variables>
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload << vars.created]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <flow-ref name="orders-writeTable"/>
+        <set-payload value="#[vars.created]"/>
+        <set-variable variableName="httpStatus" value="201"/>
+    </flow>
+
+    <!-- ============ GET /orders/{orderId} ============ -->
+    <flow name="get:\orders\(orderId):apiConfig">
+        <flow-ref name="orders-readTable"/>
+        <ee:transform doc:name="find by id">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload filter ($.id == attributes.uriParams.orderId)]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice doc:name="found?">
+            <when expression="#[sizeOf(payload) > 0]">
+                <set-payload value="#[payload[0]]"/>
+                <set-variable variableName="httpStatus" value="200"/>
+            </when>
+            <otherwise>
+                <flow-ref name="raiseOrderNotFound"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <!-- ============ PUT /orders/{orderId} ============ -->
+    <flow name="put:\orders\(orderId):application\json:apiConfig">
+        <set-variable variableName="update" value="#[payload]"/>
+        <flow-ref name="orders-readTable"/>
+        <choice doc:name="exists?">
+            <when expression="#[payload some ($.id == attributes.uriParams.orderId)]">
+                <ee:transform doc:name="apply edit (id/createdAt preserved)">
+                    <ee:variables>
+                        <ee:set-variable variableName="updated"><![CDATA[%dw 2.0
+output application/json
+var target = (payload filter ($.id == attributes.uriParams.orderId))[0] default {}
+var items = vars.update.items default target.items default []
+---
+target ++ {
+  customerId: vars.update.customerId default target.customerId,
+  status: vars.update.status default target.status,
+  currency: vars.update.currency default target.currency,
+  items: items,
+  total: sum(items map ((i) -> i.qty * i.price))
+}]]></ee:set-variable>
+                    </ee:variables>
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload map (o) -> if (o.id == attributes.uriParams.orderId) vars.updated else o]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <flow-ref name="orders-writeTable"/>
+                <set-payload value="#[vars.updated]"/>
+                <set-variable variableName="httpStatus" value="200"/>
+            </when>
+            <otherwise>
+                <flow-ref name="raiseOrderNotFound"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <!-- ============ DELETE /orders/{orderId} ============ -->
+    <flow name="delete:\orders\(orderId):apiConfig">
+        <flow-ref name="orders-readTable"/>
+        <choice doc:name="exists?">
+            <when expression="#[payload some ($.id == attributes.uriParams.orderId)]">
+                <ee:transform doc:name="remove by id">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload filter ($.id != attributes.uriParams.orderId)]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <flow-ref name="orders-writeTable"/>
+                <set-payload value="#[null]"/>
+                <set-variable variableName="httpStatus" value="204"/>
+            </when>
+            <otherwise>
+                <flow-ref name="raiseOrderNotFound"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <sub-flow name="raiseOrderNotFound">
+        <raise-error type="APIKIT:NOT_FOUND" description="Order not found"/>
+    </sub-flow>
+</mule>

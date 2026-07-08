@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+	xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+		http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+		http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd">
+
+	<munit:config name="prc-order-management-api-test.xml" />
+
+	<munit:test name="list-orders-for-customer-test" description="List orders for a customer returns downstream order array">
+		<munit:behavior>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock list orders request">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get orders by customer" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[MunitTools::getResourceAsString('list-orders-response.json')]" mediaType="application/json" encoding="UTF-8" />
+					<munit-tools:attributes value="#[output application/java --- {statusCode: 200, headers: {'Content-Type': 'application/json'}}]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit:set-event doc:name="Set list orders event">
+				<munit:payload value="#[null]" />
+				<munit:attributes value="#[output application/java --- {uriParams: {customerId: 'CUST-001'}, queryParams: {}, headers: {}, method: 'GET', requestPath: '/api/customers/CUST-001/orders'}]" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="get:\customers\(customerId)\orders:api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that expression="#[sizeOf(payload)]" is="#[MunitTools::equalTo(2)]" />
+			<munit-tools:assert-that expression="#[payload[0].customerId]" is="#[MunitTools::equalTo('CUST-001')]" />
+			<munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]" />
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify list orders request">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get orders by customer" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+		</munit:validation>
+	</munit:test>
+
+	<munit:test name="get-one-order-test" description="Get one order proxies downstream order response">
+		<munit:behavior>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock get order request">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get order by id" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[MunitTools::getResourceAsString('get-order-response.json')]" mediaType="application/json" encoding="UTF-8" />
+					<munit-tools:attributes value="#[output application/java --- {statusCode: 200, headers: {'Content-Type': 'application/json'}}]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit:set-event doc:name="Set get order event">
+				<munit:payload value="#[null]" />
+				<munit:attributes value="#[output application/java --- {uriParams: {orderId: 'ORD-001'}, queryParams: {}, headers: {}, method: 'GET', requestPath: '/api/orders/ORD-001'}]" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="get:\orders\(orderId):api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that expression="#[payload.orderId]" is="#[MunitTools::equalTo('ORD-001')]" />
+			<munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]" />
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify get order request">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get order by id" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+		</munit:validation>
+	</munit:test>
+
+	<munit:test name="create-order-existing-customer-test" description="Create order validates existing customer and returns 201">
+		<munit:behavior>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock customer exists request">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get customer for create" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[MunitTools::getResourceAsString('customer-response.json')]" mediaType="application/json" encoding="UTF-8" />
+					<munit-tools:attributes value="#[output application/java --- {statusCode: 200, headers: {'Content-Type': 'application/json'}}]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock create order request">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Create order" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[MunitTools::getResourceAsString('create-order-response.json')]" mediaType="application/json" encoding="UTF-8" />
+					<munit-tools:attributes value="#[output application/java --- {statusCode: 201, headers: {'Content-Type': 'application/json'}}]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit:set-event doc:name="Set create order event">
+				<munit:payload value="#[MunitTools::getResourceAsString('create-order-request.json')]" mediaType="application/json" encoding="UTF-8" />
+				<munit:attributes value="#[output application/java --- {uriParams: {customerId: 'CUST-001'}, queryParams: {}, headers: {'content-type': 'application/json'}, method: 'POST', requestPath: '/api/customers/CUST-001/orders'}]" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="post:\customers\(customerId)\orders:api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that expression="#[payload.orderId]" is="#[MunitTools::equalTo('ORD-003')]" />
+			<munit-tools:assert-that expression="#[payload.customerId]" is="#[MunitTools::equalTo('CUST-001')]" />
+			<munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(201)]" />
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify customer lookup">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get customer for create" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify create order">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Create order" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+		</munit:validation>
+	</munit:test>
+
+	<munit:test name="create-order-missing-customer-test" description="Create order returns 404 when customer is missing">
+		<munit:behavior>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock missing customer request">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get customer for create" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:error typeId="HTTP:NOT_FOUND" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit:set-event doc:name="Set missing customer create event">
+				<munit:payload value="#[MunitTools::getResourceAsString('create-order-missing-customer-request.json')]" mediaType="application/json" encoding="UTF-8" />
+				<munit:attributes value="#[output application/java --- {uriParams: {customerId: 'CUST-999'}, queryParams: {}, headers: {'content-type': 'application/json'}, method: 'POST', requestPath: '/api/customers/CUST-999/orders'}]" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="post:\customers\(customerId)\orders:api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that expression="#[payload.error]" is="#[MunitTools::equalTo('CUSTOMER_NOT_FOUND')]" />
+			<munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(404)]" />
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify missing customer lookup">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get customer for create" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+			<munit-tools:verify-call processor="http:request" times="0" doc:name="Verify create order not called">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Create order" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+		</munit:validation>
+	</munit:test>
+
+	<munit:test name="cancel-order-success-test" description="Cancel order patches status to CANCELLED">
+		<munit:behavior>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock get order before cancel">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get order before cancel" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[MunitTools::getResourceAsString('cancel-order-current-response.json')]" mediaType="application/json" encoding="UTF-8" />
+					<munit-tools:attributes value="#[output application/java --- {statusCode: 200, headers: {'Content-Type': 'application/json'}}]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock patch order status">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Patch order status" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[MunitTools::getResourceAsString('cancel-order-response.json')]" mediaType="application/json" encoding="UTF-8" />
+					<munit-tools:attributes value="#[output application/java --- {statusCode: 200, headers: {'Content-Type': 'application/json'}}]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit:set-event doc:name="Set cancel order event">
+				<munit:payload value="#[null]" />
+				<munit:attributes value="#[output application/java --- {uriParams: {orderId: 'ORD-001'}, queryParams: {}, headers: {}, method: 'POST', requestPath: '/api/orders/ORD-001/cancel'}]" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="post:\orders\(orderId)\cancel:api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that expression="#[payload.status]" is="#[MunitTools::equalTo('CANCELLED')]" />
+			<munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(200)]" />
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify get before cancel">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get order before cancel" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify patch status">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Patch order status" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+		</munit:validation>
+	</munit:test>
+
+	<munit:test name="cancel-order-already-cancelled-test" description="Cancel order returns 409 when order is already cancelled">
+		<munit:behavior>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock already cancelled order">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get order before cancel" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[MunitTools::getResourceAsString('cancel-order-already-cancelled-response.json')]" mediaType="application/json" encoding="UTF-8" />
+					<munit-tools:attributes value="#[output application/java --- {statusCode: 200, headers: {'Content-Type': 'application/json'}}]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit:set-event doc:name="Set already cancelled event">
+				<munit:payload value="#[null]" />
+				<munit:attributes value="#[output application/java --- {uriParams: {orderId: 'ORD-001'}, queryParams: {}, headers: {}, method: 'POST', requestPath: '/api/orders/ORD-001/cancel'}]" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="post:\orders\(orderId)\cancel:api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that expression="#[payload.error]" is="#[MunitTools::equalTo('ALREADY_CANCELLED')]" />
+			<munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(409)]" />
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify get already cancelled">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Get order before cancel" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+			<munit-tools:verify-call processor="http:request" times="0" doc:name="Verify patch not called">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Patch order status" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+		</munit:validation>
+	</munit:test>
+
+	<munit:test name="delete-order-test" description="Delete order returns 204 and clears payload">
+		<munit:behavior>
+			<munit-tools:mock-when processor="http:request" doc:name="Mock delete order request">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Delete order" />
+				</munit-tools:with-attributes>
+				<munit-tools:then-return>
+					<munit-tools:payload value="#[null]" />
+					<munit-tools:attributes value="#[output application/java --- {statusCode: 204, headers: {}}]" />
+				</munit-tools:then-return>
+			</munit-tools:mock-when>
+			<munit:set-event doc:name="Set delete order event">
+				<munit:payload value="#[null]" />
+				<munit:attributes value="#[output application/java --- {uriParams: {orderId: 'ORD-001'}, queryParams: {}, headers: {}, method: 'DELETE', requestPath: '/api/orders/ORD-001'}]" />
+			</munit:set-event>
+		</munit:behavior>
+		<munit:execution>
+			<flow-ref name="delete:\orders\(orderId):api-config" />
+		</munit:execution>
+		<munit:validation>
+			<munit-tools:assert-that expression="#[payload]" is="#[MunitTools::nullValue()]" />
+			<munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo(204)]" />
+			<munit-tools:verify-call processor="http:request" times="1" doc:name="Verify delete order">
+				<munit-tools:with-attributes>
+					<munit-tools:with-attribute attributeName="doc:name" whereValue="Delete order" />
+				</munit-tools:with-attributes>
+			</munit-tools:verify-call>
+		</munit:validation>
+	</munit:test>
+</mule>

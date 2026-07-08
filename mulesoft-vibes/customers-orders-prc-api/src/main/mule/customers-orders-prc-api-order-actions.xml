@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ===== PATCH /customers/{customerId}/orders/{orderId}/cancel ===== -->
+    <flow name="prc-cancel-customer-order-flow"
+        doc:name="PRC Cancel Customer Order Flow"
+        doc:description="Validates order ownership then delegates to orders-sys-api to set status CANCELLED. Order is not deleted.">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers/{customerId}/orders/{orderId}/cancel"
+            allowedMethods="PATCH"
+            doc:name="PATCH /customers/{customerId}/orders/{orderId}/cancel"
+            doc:description="Inbound REST call to cancel an order — sets CANCELLED status without deleting the record">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+            </http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]"
+            doc:name="Store customerId" doc:description="Captures customerId URI param for ownership validation"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"
+            doc:name="Store orderId" doc:description="Captures orderId URI param"/>
+        <http:request
+            config-ref="Orders_Sys_API_Request_config"
+            method="GET"
+            path="#['/orders/' ++ vars.orderId]"
+            doc:name="Fetch order for ownership check"
+            doc:description="Retrieves the order to verify it belongs to the specified customer before cancelling">
+            <http:response-validator>
+                <http:success-status-code-validator values="1..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="orderCheckStatus" value="#[attributes.statusCode]"
+            doc:name="Capture order check status" doc:description="Stores orders-sys-api response status for routing"/>
+        <choice doc:name="Order found + owned?" doc:description="Validates order exists and belongs to this customer before cancelling">
+            <when expression="#[vars.orderCheckStatus != 200 or payload.customerId != vars.customerId]"
+                doc:name="Not found or wrong customer"
+                doc:description="Order does not exist or does not belong to this customer">
+                <set-variable variableName="httpStatus" value="404"
+                    doc:name="Set 404" doc:description="Order not found or ownership mismatch"/>
+                <ee:transform doc:name="404 body" doc:description="JSON 404 error for order not found or not owned">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Order '" ++ vars.orderId ++ "' not found for customer '" ++ vars.customerId ++ "'",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise doc:name="Valid — cancel order" doc:description="Order verified, delegate cancellation to orders-sys-api">
+                <http:request
+                    config-ref="Orders_Sys_API_Request_config"
+                    method="PATCH"
+                    path="#['/orders/' ++ vars.orderId ++ '/cancel']"
+                    doc:name="PATCH cancel order → sys API"
+                    doc:description="Calls orders-sys-api to set the order status to CANCELLED">
+                    <http:response-validator>
+                        <http:success-status-code-validator values="1..599"/>
+                    </http:response-validator>
+                </http:request>
+                <set-variable variableName="httpStatus" value="#[attributes.statusCode]"
+                    doc:name="Capture status" doc:description="Stores response status from orders-sys-api cancel operation"/>
+            </otherwise>
+        </choice>
+        <logger level="INFO"
+            message="#['[prc-api] PATCH /customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ '/cancel → ' ++ (vars.httpStatus default '200')]"
+            doc:name="Log" doc:description="Logs cancel order result"/>
+    </flow>
+
+    <!-- ===== DELETE /customers/{customerId}/orders/{orderId} ===== -->
+    <flow name="prc-delete-customer-order-flow"
+        doc:name="PRC Delete Customer Order Flow"
+        doc:description="Validates order ownership then permanently deletes the order via orders-sys-api">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/customers/{customerId}/orders/{orderId}"
+            allowedMethods="DELETE"
+            doc:name="DELETE /customers/{customerId}/orders/{orderId}"
+            doc:description="Inbound REST call to permanently delete an order scoped to a customer">
+            <http:response statusCode="#[vars.httpStatus default 204]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+            </http:error-response>
+        </http:listener>
+        <set-variable variableName="customerId" value="#[attributes.uriParams.customerId]"
+            doc:name="Store customerId" doc:description="Captures customerId URI param for ownership validation"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"
+            doc:name="Store orderId" doc:description="Captures orderId URI param"/>
+        <http:request
+            config-ref="Orders_Sys_API_Request_config"
+            method="GET"
+            path="#['/orders/' ++ vars.orderId]"
+            doc:name="Fetch order for ownership check"
+            doc:description="Retrieves the order to verify it belongs to the specified customer before deleting">
+            <http:response-validator>
+                <http:success-status-code-validator values="1..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="orderCheckStatus" value="#[attributes.statusCode]"
+            doc:name="Capture order check status" doc:description="Stores orders-sys-api response status for routing"/>
+        <choice doc:name="Order found + owned?" doc:description="Validates order exists and belongs to this customer before deleting">
+            <when expression="#[vars.orderCheckStatus != 200 or payload.customerId != vars.customerId]"
+                doc:name="Not found or wrong customer"
+                doc:description="Order does not exist or does not belong to this customer">
+                <set-variable variableName="httpStatus" value="404"
+                    doc:name="Set 404" doc:description="Order not found or ownership mismatch"/>
+                <ee:transform doc:name="404 body" doc:description="JSON 404 error for order not found or not owned">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Order '" ++ vars.orderId ++ "' not found for customer '" ++ vars.customerId ++ "'",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise doc:name="Valid — delete order" doc:description="Order verified, delegate deletion to orders-sys-api">
+                <http:request
+                    config-ref="Orders_Sys_API_Request_config"
+                    method="DELETE"
+                    path="#['/orders/' ++ vars.orderId]"
+                    doc:name="DELETE order → sys API"
+                    doc:description="Calls orders-sys-api to permanently delete the order">
+                    <http:response-validator>
+                        <http:success-status-code-validator values="1..599"/>
+                    </http:response-validator>
+                </http:request>
+                <set-variable variableName="httpStatus" value="#[attributes.statusCode]"
+                    doc:name="Capture status" doc:description="Stores response status from orders-sys-api delete"/>
+            </otherwise>
+        </choice>
+        <logger level="INFO"
+            message="#['[prc-api] DELETE /customers/' ++ vars.customerId ++ '/orders/' ++ vars.orderId ++ ' → ' ++ (vars.httpStatus default '204')]"
+            doc:name="Log" doc:description="Logs delete order result"/>
+    </flow>
+
+</mule>

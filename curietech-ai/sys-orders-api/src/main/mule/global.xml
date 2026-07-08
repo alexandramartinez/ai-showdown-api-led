@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<!-- Bootstrap + environment properties -->
+	<global-property name="mule.env" value="dev" doc:name="Environment" />
+	<configuration-properties file="config/config-${mule.env}.yaml" doc:name="Configuration Properties" />
+
+	<!-- Route errors that are not handled by a flow's own error-handler through the global handler -->
+	<configuration defaultErrorHandler-ref="global-error-handler" doc:name="Configuration" />
+
+	<!-- HTTP Listener Configuration -->
+	<http:listener-config name="sys-orders-httpListenerConfig" doc:name="HTTP Listener config">
+		<http:listener-connection host="${http.host}" port="${http.port}" />
+	</http:listener-config>
+
+	<!-- APIkit Configuration referencing the RAML specification -->
+	<apikit:config name="sys-orders-api-config" api="api/sys-orders-api.raml"
+		outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" doc:name="APIkit Router config" />
+
+	<!-- In-memory (non-persistent) Object Store used as the mock order datastore -->
+	<os:object-store name="orderStore" persistent="false" maxEntries="1000"
+		entryTtl="24" entryTtlUnit="HOURS" expirationInterval="1" expirationIntervalUnit="HOURS"
+		doc:name="orderStore" />
+
+	<!-- Global error handler: maps APIkit errors and provides a generic 500 -->
+	<error-handler name="global-error-handler" doc:name="Global Error Handler">
+		<on-error-propagate type="APIKIT:BAD_REQUEST" doc:name="400 Bad Request">
+			<ee:transform doc:name="Set 400">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "BAD_REQUEST",
+  message: "The request was malformed or invalid"
+}]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus">400</ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+		<on-error-propagate type="APIKIT:NOT_FOUND" doc:name="404 Not Found">
+			<ee:transform doc:name="Set 404">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "NOT_FOUND",
+  message: "The requested resource was not found"
+}]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus">404</ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+		<on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED" doc:name="405 Method Not Allowed">
+			<ee:transform doc:name="Set 405">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "METHOD_NOT_ALLOWED",
+  message: "The HTTP method is not allowed for this resource"
+}]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus">405</ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+		<on-error-propagate type="APIKIT:NOT_ACCEPTABLE" doc:name="406 Not Acceptable">
+			<ee:transform doc:name="Set 406">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "NOT_ACCEPTABLE",
+  message: "The requested media type is not acceptable"
+}]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus">406</ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+		<on-error-propagate type="APIKIT:UNSUPPORTED_MEDIA_TYPE" doc:name="415 Unsupported Media Type">
+			<ee:transform doc:name="Set 415">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "UNSUPPORTED_MEDIA_TYPE",
+  message: "The request media type is not supported"
+}]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus">415</ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+		<on-error-propagate type="ANY" doc:name="500 Internal Server Error">
+			<ee:transform doc:name="Set 500">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  error: "INTERNAL_SERVER_ERROR",
+  message: (error.description default "An unexpected error occurred")
+}]]></ee:set-payload>
+				</ee:message>
+				<ee:variables>
+					<ee:set-variable variableName="httpStatus">500</ee:set-variable>
+				</ee:variables>
+			</ee:transform>
+		</on-error-propagate>
+	</error-handler>
+
+</mule>

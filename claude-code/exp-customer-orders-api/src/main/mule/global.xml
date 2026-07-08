@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <configuration-properties file="config-local.yaml"/>
+
+    <http:listener-config name="httpListenerConfig">
+        <http:listener-connection host="${http.host}" port="${http.port}"/>
+    </http:listener-config>
+
+    <apikit:config name="apiConfig" raml="api/exp-customer-orders-api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus"/>
+
+    <!-- Downstream Process API client. Accept any status so we can map it back to the client. -->
+    <http:request-config name="prcConfig" basePath="${prc.basePath}">
+        <http:request-connection host="${prc.host}" port="${prc.port}"/>
+    </http:request-config>
+
+    <!--
+      The Experience layer maps whatever the Process API returned straight back to
+      the client, preserving its status code. Only APIkit protocol errors (validation,
+      routing) are shaped locally here.
+    -->
+    <error-handler name="globalErrorHandler">
+        <on-error-propagate type="APIKIT:BAD_REQUEST" logException="false">
+            <set-variable variableName="httpStatus" value="400"/>
+            <ee:transform doc:name="400 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "BAD_REQUEST", message: error.description default "Malformed request", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:NOT_FOUND" logException="false">
+            <set-variable variableName="httpStatus" value="404"/>
+            <ee:transform doc:name="404 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "NOT_FOUND", message: error.description default "Resource not found", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED" logException="false">
+            <set-variable variableName="httpStatus" value="405"/>
+            <ee:transform doc:name="405 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "METHOD_NOT_ALLOWED", message: "Method not allowed", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="ANY">
+            <set-variable variableName="httpStatus" value="500"/>
+            <ee:transform doc:name="500 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "INTERNAL_SERVER_ERROR", message: error.description default "Unexpected error", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+    </error-handler>
+</mule>

@@ -1,0 +1,167 @@
+#%RAML 1.0
+title: exp-customer-orders-api
+version: v1
+baseUri: /api
+mediaType: application/json
+
+uses: {}
+
+types:
+  Customer:
+    type: object
+    additionalProperties: true
+  CustomerRequest:
+    type: object
+    additionalProperties: true
+  Order:
+    type: object
+    additionalProperties: true
+  OrderRequest:
+    type: object
+    additionalProperties: true
+  ErrorResponse:
+    type: object
+    properties:
+      error: string
+    additionalProperties: true
+
+/customers:
+  get:
+    description: List customers.
+    responses:
+      200:
+        body:
+          application/json:
+            type: Customer[]
+  post:
+    description: Create a customer.
+    body:
+      application/json:
+        type: CustomerRequest
+    responses:
+      201:
+        body:
+          application/json:
+            type: Customer
+      400:
+        body:
+          application/json:
+            type: ErrorResponse
+  /{customerId}:
+    get:
+      description: Get a customer by id.
+      responses:
+        200:
+          body:
+            application/json:
+              type: Customer
+        404:
+          body:
+            application/json:
+              type: ErrorResponse
+    put:
+      description: Update a customer by id.
+      body:
+        application/json:
+          type: CustomerRequest
+      responses:
+        200:
+          body:
+            application/json:
+              type: Customer
+        400:
+          body:
+            application/json:
+              type: ErrorResponse
+        404:
+          body:
+            application/json:
+              type: ErrorResponse
+    delete:
+      description: Delete a customer by id. May return 409 when the customer has orders.
+      responses:
+        204:
+        409:
+          body:
+            application/json:
+              type: ErrorResponse
+        404:
+          body:
+            application/json:
+              type: ErrorResponse
+    /orders:
+      get:
+        description: List orders for a customer.
+        responses:
+          200:
+            body:
+              application/json:
+                type: Order[]
+      post:
+        description: Create an order for a customer.
+        body:
+          application/json:
+            type: OrderRequest
+        responses:
+          201:
+            body:
+              application/json:
+                type: Order
+          400:
+            body:
+              application/json:
+                type: ErrorResponse
+      /{orderId}:
+        get:
+          description: Get an order by id.
+          responses:
+            200:
+              body:
+                application/json:
+                  type: Order
+            404:
+              body:
+                application/json:
+                  type: ErrorResponse
+        put:
+          description: Update an order by id.
+          body:
+            application/json:
+              type: OrderRequest
+          responses:
+            200:
+              body:
+                application/json:
+                  type: Order
+            400:
+              body:
+                application/json:
+                  type: ErrorResponse
+            404:
+              body:
+                application/json:
+                  type: ErrorResponse
+        delete:
+          description: Delete an order by id.
+          responses:
+            204:
+            404:
+              body:
+                application/json:
+                  type: ErrorResponse
+        /cancel:
+          post:
+            description: Cancel an order by id.
+            responses:
+              200:
+                body:
+                  application/json:
+                    type: Order
+              400:
+                body:
+                  application/json:
+                    type: ErrorResponse
+              404:
+                body:
+                  application/json:
+                    type: ErrorResponse

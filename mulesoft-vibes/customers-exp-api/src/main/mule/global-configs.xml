@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <configuration-properties
+        file="config.yaml"
+        doc:name="Config Properties"
+        doc:description="Loads application properties including HTTP port and downstream Process API host/port" />
+
+    <!-- Inbound: listens on port 8081 for API consumers (web apps, mobile, etc.) -->
+    <http:listener-config
+        name="HTTP_Listener_config"
+        doc:name="HTTP Listener Config"
+        doc:description="HTTP listener configuration for customers-exp-api on port ${http.port}">
+        <http:listener-connection host="0.0.0.0" port="${http.port}" />
+    </http:listener-config>
+
+    <!-- Outbound: calls customers-orders-prc-api on port 8082 -->
+    <http:request-config
+        name="PRC_API_Request_config"
+        basePath="${prc.api.basePath}"
+        doc:name="Process API Request Config"
+        doc:description="HTTP request configuration for calling the customers-orders-prc-api Process API on port 8082">
+        <http:request-connection host="${prc.api.host}" port="${prc.api.port}" />
+    </http:request-config>
+
+</mule>

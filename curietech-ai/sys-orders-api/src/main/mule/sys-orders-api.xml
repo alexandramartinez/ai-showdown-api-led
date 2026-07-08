@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<!-- ============================================================= -->
+	<!-- MAIN APIkit FLOW                                              -->
+	<!-- ============================================================= -->
+	<flow name="sys-orders-api-main">
+		<http:listener config-ref="sys-orders-httpListenerConfig" path="/api/*">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers>#[vars.outboundHeaders default {}]</http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body>#[payload]</http:body>
+				<http:headers>#[vars.outboundHeaders default {}]</http:headers>
+			</http:error-response>
+		</http:listener>
+		<apikit:router config-ref="sys-orders-api-config" />
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- SEEDING: seed ~8 mock orders on startup                       -->
+	<!-- ============================================================= -->
+	<flow name="sys-orders-seed-init" doc:name="Seed on startup">
+		<scheduler doc:name="Run once at startup">
+			<scheduling-strategy>
+				<fixed-frequency frequency="315360000" timeUnit="SECONDS" startDelay="0" />
+			</scheduling-strategy>
+		</scheduler>
+		<os:retrieve-all-keys objectStore="orderStore" target="existingKeys" doc:name="Existing keys" />
+		<choice doc:name="Seed only if store is empty">
+			<when expression="#[isEmpty(vars.existingKeys)]">
+				<flow-ref name="sys-orders-seed-data" doc:name="Seed data" />
+			</when>
+		</choice>
+	</flow>
+
+	<sub-flow name="sys-orders-seed-data" doc:name="Seed order data">
+		<os:clear objectStore="orderStore" doc:name="Clear store" />
+		<ee:transform doc:name="Build seed orders">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+[
+  { id: "ORD-001", customerId: "CUST-001", status: "NEW",
+    items: [{ productId: "P-100", name: "Widget", quantity: 2, unitPrice: 19.99 }],
+    totalAmount: 39.98, createdAt: "2024-02-01T10:00:00Z", updatedAt: "2024-02-01T10:00:00Z" },
+  { id: "ORD-002", customerId: "CUST-001", status: "CONFIRMED",
+    items: [{ productId: "P-200", name: "Gadget", quantity: 1, unitPrice: 149.99 }],
+    totalAmount: 149.99, createdAt: "2024-02-02T11:15:00Z", updatedAt: "2024-02-02T12:00:00Z" },
+  { id: "ORD-003", customerId: "CUST-002", status: "SHIPPED",
+    items: [{ productId: "P-100", name: "Widget", quantity: 3, unitPrice: 19.99 }, { productId: "P-300", name: "Cable", quantity: 2, unitPrice: 9.50 }],
+    totalAmount: 78.97, createdAt: "2024-02-03T09:30:00Z", updatedAt: "2024-02-04T08:00:00Z" },
+  { id: "ORD-004", customerId: "CUST-002", status: "NEW",
+    items: [{ productId: "P-400", name: "Monitor", quantity: 1, unitPrice: 199.00 }],
+    totalAmount: 199.00, createdAt: "2024-02-05T14:45:00Z", updatedAt: "2024-02-05T14:45:00Z" },
+  { id: "ORD-005", customerId: "CUST-003", status: "CONFIRMED",
+    items: [{ productId: "P-500", name: "Keyboard", quantity: 2, unitPrice: 49.99 }],
+    totalAmount: 99.98, createdAt: "2024-02-06T16:20:00Z", updatedAt: "2024-02-06T17:00:00Z" },
+  { id: "ORD-006", customerId: "CUST-003", status: "CANCELLED",
+    items: [{ productId: "P-600", name: "Mouse", quantity: 1, unitPrice: 25.00 }],
+    totalAmount: 25.00, createdAt: "2024-02-07T10:10:00Z", updatedAt: "2024-02-08T09:00:00Z" },
+  { id: "ORD-007", customerId: "CUST-004", status: "SHIPPED",
+    items: [{ productId: "P-700", name: "Desk", quantity: 1, unitPrice: 350.00 }],
+    totalAmount: 350.00, createdAt: "2024-02-09T13:00:00Z", updatedAt: "2024-02-10T10:00:00Z" },
+  { id: "ORD-008", customerId: "CUST-004", status: "NEW",
+    items: [{ productId: "P-100", name: "Widget", quantity: 5, unitPrice: 19.99 }],
+    totalAmount: 99.95, createdAt: "2024-02-11T08:05:00Z", updatedAt: "2024-02-11T08:05:00Z" }
+]]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<foreach collection="#[payload]" doc:name="Store each order">
+			<os:store key="#[payload.id]" objectStore="orderStore" doc:name="Store order">
+				<os:value>#[payload]</os:value>
+			</os:store>
+		</foreach>
+	</sub-flow>
+
+	<!-- ============================================================= -->
+	<!-- GET /orders  (optional ?customerId= filter)                   -->
+	<!-- ============================================================= -->
+	<flow name="get:\orders:sys-orders-api-config">
+		<os:retrieve-all objectStore="orderStore" target="allOrders" doc:name="Retrieve all orders" />
+		<ee:transform doc:name="Filter and respond">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var orders = (vars.allOrders default {}) pluck ((v) -> v)
+var cid = attributes.queryParams.customerId
+---
+if (cid != null) (orders filter ($.customerId == cid)) else orders]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- GET /orders/{orderId}                                         -->
+	<!-- ============================================================= -->
+	<flow name="get:\orders\(orderId):sys-orders-api-config">
+		<os:contains key="#[attributes.uriParams.orderId]" objectStore="orderStore" target="orderExists" doc:name="Order exists?" />
+		<choice doc:name="Found?">
+			<when expression="#[vars.orderExists]">
+				<os:retrieve key="#[attributes.uriParams.orderId]" objectStore="orderStore" doc:name="Retrieve order" />
+				<ee:transform doc:name="Respond 200">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<flow-ref name="sys-orders-not-found" doc:name="Not found" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- POST /orders                                                  -->
+	<!-- ============================================================= -->
+	<flow name="post:\orders:application\json:sys-orders-api-config">
+		<os:retrieve-all-keys objectStore="orderStore" target="allKeys" doc:name="Existing keys" />
+		<ee:transform doc:name="Build new order">
+			<ee:variables>
+				<ee:set-variable variableName="newOrder"><![CDATA[%dw 2.0
+output application/java
+var body = payload
+var nums = (vars.allKeys default []) map ((k) -> ((k splitBy "-")[1] as Number default 0))
+var maxNum = max(nums) default 0
+var nextId = "ORD-" ++ ((maxNum + 1) as String {format: "000"})
+var nowStr = now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+var computedTotal = sum((body.items default []) map ((i) -> i.quantity * i.unitPrice))
+---
+{
+  id: nextId,
+  customerId: body.customerId,
+  status: body.status default "NEW",
+  items: body.items default [],
+  totalAmount: body.totalAmount default computedTotal,
+  createdAt: nowStr,
+  updatedAt: nowStr
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<os:store key="#[vars.newOrder.id]" objectStore="orderStore" doc:name="Store new order">
+			<os:value>#[vars.newOrder]</os:value>
+		</os:store>
+		<ee:transform doc:name="Respond 201">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.newOrder]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="httpStatus">201</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- PUT /orders/{orderId}                                         -->
+	<!-- ============================================================= -->
+	<flow name="put:\orders\(orderId):application\json:sys-orders-api-config">
+		<os:contains key="#[attributes.uriParams.orderId]" objectStore="orderStore" target="orderExists" doc:name="Order exists?" />
+		<choice doc:name="Found?">
+			<when expression="#[vars.orderExists]">
+				<os:retrieve key="#[attributes.uriParams.orderId]" objectStore="orderStore" target="existingOrder" doc:name="Retrieve existing" />
+				<ee:transform doc:name="Build updated order">
+					<ee:variables>
+						<ee:set-variable variableName="updatedOrder"><![CDATA[%dw 2.0
+output application/java
+var body = payload
+var existing = vars.existingOrder
+var newItems = body.items default existing.items
+var computedTotal = sum((newItems default []) map ((i) -> i.quantity * i.unitPrice))
+var nowStr = now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+---
+{
+  id: existing.id,
+  customerId: body.customerId default existing.customerId,
+  status: body.status default existing.status,
+  items: newItems,
+  totalAmount: if (body.items != null) computedTotal else (body.totalAmount default existing.totalAmount),
+  createdAt: existing.createdAt,
+  updatedAt: nowStr
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<os:store key="#[attributes.uriParams.orderId]" objectStore="orderStore" doc:name="Store updated order">
+					<os:value>#[vars.updatedOrder]</os:value>
+				</os:store>
+				<ee:transform doc:name="Respond 200">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.updatedOrder]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<flow-ref name="sys-orders-not-found" doc:name="Not found" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- PATCH /orders/{orderId}/status                                -->
+	<!-- ============================================================= -->
+	<flow name="patch:\orders\(orderId)\status:application\json:sys-orders-api-config">
+		<os:contains key="#[attributes.uriParams.orderId]" objectStore="orderStore" target="orderExists" doc:name="Order exists?" />
+		<choice doc:name="Found?">
+			<when expression="#[vars.orderExists]">
+				<os:retrieve key="#[attributes.uriParams.orderId]" objectStore="orderStore" target="existingOrder" doc:name="Retrieve existing" />
+				<ee:transform doc:name="Apply status change">
+					<ee:variables>
+						<ee:set-variable variableName="updatedOrder"><![CDATA[%dw 2.0
+output application/java
+var body = payload
+var existing = vars.existingOrder
+var nowStr = now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+---
+existing ++ {
+  status: body.status default existing.status,
+  updatedAt: nowStr
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<os:store key="#[attributes.uriParams.orderId]" objectStore="orderStore" doc:name="Store updated order">
+					<os:value>#[vars.updatedOrder]</os:value>
+				</os:store>
+				<ee:transform doc:name="Respond 200">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.updatedOrder]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<flow-ref name="sys-orders-not-found" doc:name="Not found" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- DELETE /orders/{orderId}                                      -->
+	<!-- ============================================================= -->
+	<flow name="delete:\orders\(orderId):sys-orders-api-config">
+		<os:contains key="#[attributes.uriParams.orderId]" objectStore="orderStore" target="orderExists" doc:name="Order exists?" />
+		<choice doc:name="Found?">
+			<when expression="#[vars.orderExists]">
+				<os:remove key="#[attributes.uriParams.orderId]" objectStore="orderStore" doc:name="Remove order" />
+				<ee:transform doc:name="Respond 204">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+null]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus">204</ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<flow-ref name="sys-orders-not-found" doc:name="Not found" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- Shared: ORDER_NOT_FOUND 404 response                          -->
+	<!-- ============================================================= -->
+	<sub-flow name="sys-orders-not-found" doc:name="Order not found">
+		<ee:transform doc:name="Respond 404">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "ORDER_NOT_FOUND" }]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="httpStatus">404</ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+	</sub-flow>
+
+</mule>

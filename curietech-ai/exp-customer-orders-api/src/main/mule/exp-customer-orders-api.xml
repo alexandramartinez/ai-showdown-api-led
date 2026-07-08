@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <flow name="exp-customer-orders-api-main">
+        <http:listener config-ref="apiHttpListenerConfig" path="/*" doc:name="Receive API Request">
+            <http:response statusCode="#[vars.httpStatus default attributes.statusCode default 200]">
+                <http:headers><![CDATA[#[
+                    (vars.outboundHeaders default {}) ++ {
+                        "x-correlation-id": vars.clientCorrelationId default correlationId,
+                        "content-type": "application/json"
+                    }
+                ]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body><![CDATA[#[payload]]]></http:body>
+                <http:headers><![CDATA[#[
+                    (vars.outboundHeaders default {}) ++ {
+                        "x-correlation-id": vars.clientCorrelationId default correlationId,
+                        "content-type": "application/json"
+                    }
+                ]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable variableName="clientCorrelationId" value="#[attributes.headers.'x-correlation-id' default attributes.headers.'X-Correlation-Id' default correlationId]" doc:name="Capture Correlation Id"/>
+        <apikit:router config-ref="exp-customer-orders-api-config" doc:name="APIkit Router"/>
+        <error-handler ref="global-api-error-handler"/>
+    </flow>
+
+    <flow name="get:\customers:exp-customer-orders-api-config">
+        <http:request method="GET" config-ref="processHttpRequestConfig" url="#[p('prc.customer.baseUrl') ++ '/customers']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Customer Process API - Get Customers">
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 200]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="get:\customers\(customerId):exp-customer-orders-api-config">
+        <http:request method="GET" config-ref="processHttpRequestConfig" url="#[p('prc.customer.baseUrl') ++ '/customers/' ++ attributes.uriParams.'customerId']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Customer Process API - Get Customer">
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 200]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="post:\customers:exp-customer-orders-api-config">
+        <http:request method="POST" config-ref="processHttpRequestConfig" url="#[p('prc.customer.baseUrl') ++ '/customers']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Customer Process API - Create Customer">
+            <http:body><![CDATA[#[payload]]]></http:body>
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "content-type": "application/json", "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 201]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="put:\customers\(customerId):exp-customer-orders-api-config">
+        <http:request method="PUT" config-ref="processHttpRequestConfig" url="#[p('prc.customer.baseUrl') ++ '/customers/' ++ attributes.uriParams.'customerId']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Customer Process API - Update Customer">
+            <http:body><![CDATA[#[payload]]]></http:body>
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "content-type": "application/json", "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 200]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="delete:\customers\(customerId):exp-customer-orders-api-config">
+        <http:request method="DELETE" config-ref="processHttpRequestConfig" url="#[p('prc.customer.baseUrl') ++ '/customers/' ++ attributes.uriParams.'customerId']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Customer Process API - Delete Customer">
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 204]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="get:\customers\(customerId)\orders:exp-customer-orders-api-config">
+        <http:request method="GET" config-ref="processHttpRequestConfig" url="#[p('prc.order.baseUrl') ++ '/customers/' ++ attributes.uriParams.'customerId' ++ '/orders']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Order Process API - Get Customer Orders">
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 200]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="get:\customers\(customerId)\orders\(orderId):exp-customer-orders-api-config">
+        <http:request method="GET" config-ref="processHttpRequestConfig" url="#[p('prc.order.baseUrl') ++ '/orders/' ++ attributes.uriParams.'orderId']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Order Process API - Get Order">
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 200]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="post:\customers\(customerId)\orders:exp-customer-orders-api-config">
+        <http:request method="POST" config-ref="processHttpRequestConfig" url="#[p('prc.order.baseUrl') ++ '/customers/' ++ attributes.uriParams.'customerId' ++ '/orders']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Order Process API - Create Order">
+            <http:body><![CDATA[#[payload]]]></http:body>
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "content-type": "application/json", "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 201]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="put:\customers\(customerId)\orders\(orderId):exp-customer-orders-api-config">
+        <http:request method="PUT" config-ref="processHttpRequestConfig" url="#[p('prc.order.baseUrl') ++ '/orders/' ++ attributes.uriParams.'orderId']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Order Process API - Update Order">
+            <http:body><![CDATA[#[payload]]]></http:body>
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "content-type": "application/json", "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 200]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="post:\customers\(customerId)\orders\(orderId)\cancel:exp-customer-orders-api-config">
+        <http:request method="POST" config-ref="processHttpRequestConfig" url="#[p('prc.order.baseUrl') ++ '/orders/' ++ attributes.uriParams.'orderId' ++ '/cancel']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Order Process API - Cancel Order">
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 200]" doc:name="Set Response Status"/>
+    </flow>
+
+    <flow name="delete:\customers\(customerId)\orders\(orderId):exp-customer-orders-api-config">
+        <http:request method="DELETE" config-ref="processHttpRequestConfig" url="#[p('prc.order.baseUrl') ++ '/orders/' ++ attributes.uriParams.'orderId']" sendCorrelationId="ALWAYS" correlationId="#[vars.clientCorrelationId default correlationId]" doc:name="Call Order Process API - Delete Order">
+            <http:headers><![CDATA[#[{"x-correlation-id": vars.clientCorrelationId default correlationId, "accept": "application/json"}]]]></http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="0..599"/>
+            </http:response-validator>
+        </http:request>
+        <set-variable variableName="httpStatus" value="#[attributes.statusCode default 204]" doc:name="Set Response Status"/>
+    </flow>
+
+</mule>

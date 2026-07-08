@@ -1,0 +1,5 @@
+{
+  "error": "CONFLICT",
+  "message": "Customer CUST-10421 has active orders and cannot be deleted",
+  "code": 409
+}

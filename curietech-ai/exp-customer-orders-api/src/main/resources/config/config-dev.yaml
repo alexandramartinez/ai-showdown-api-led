@@ -1,0 +1,9 @@
+http:
+  host: "0.0.0.0"
+  port: "8080"
+
+prc:
+  customer:
+    baseUrl: "http://localhost:8083/api"
+  order:
+    baseUrl: "http://localhost:8084/api"

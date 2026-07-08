@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ============ APIkit router ============ -->
+    <flow name="prc-customer-orders-api-main">
+        <http:listener config-ref="httpListenerConfig" path="${http.basePath}/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="apiConfig"/>
+        <error-handler ref="globalErrorHandler"/>
+    </flow>
+
+    <flow name="prc-customer-orders-api-console">
+        <http:listener config-ref="httpListenerConfig" path="${http.basePath}/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+        </http:listener>
+        <apikit:console config-ref="apiConfig"/>
+        <error-handler ref="globalErrorHandler"/>
+    </flow>
+
+    <!-- ============================================================
+         CUSTOMER operations (delegate to sys-customers-api)
+         ============================================================ -->
+
+    <flow name="get:\customers:apiConfig">
+        <http:request method="GET" config-ref="sysCustomersConfig" path="/customers">
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+        </http:request>
+        <set-variable variableName="httpStatus" value="200"/>
+    </flow>
+
+    <flow name="post:\customers:application\json:apiConfig">
+        <http:request method="POST" config-ref="sysCustomersConfig" path="/customers">
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+        </http:request>
+        <set-variable variableName="httpStatus" value="201"/>
+    </flow>
+
+    <flow name="get:\customers\(customerId):apiConfig">
+        <http:request method="GET" config-ref="sysCustomersConfig" path="/customers/{customerId}">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="passThroughOr404"/>
+    </flow>
+
+    <flow name="put:\customers\(customerId):application\json:apiConfig">
+        <http:request method="PUT" config-ref="sysCustomersConfig" path="/customers/{customerId}">
+            <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <flow-ref name="passThroughOr404"/>
+    </flow>
+
+    <!-- RULE: delete a customer only if it has NO orders. -->
+    <flow name="delete:\customers\(customerId):apiConfig">
+        <!-- 1) ensure the customer exists (404 otherwise) -->
+        <flow-ref name="ensureCustomerExists"/>
+        <!-- 2) check for attached orders via the orders system API filter -->
+        <http:request method="GET" config-ref="sysOrdersConfig" path="/orders">
+            <http:query-params>#[{ customerId: attributes.uriParams.customerId }]</http:query-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+        </http:request>
+        <choice doc:name="has orders?">
+            <when expression="#[sizeOf(payload default []) > 0]">
+                <raise-error type="APP:CUSTOMER_HAS_ORDERS"
+                             description="Customer has orders and cannot be deleted"/>
+            </when>
+            <otherwise>
+                <!-- 3) safe to delete -->
+                <http:request method="DELETE" config-ref="sysCustomersConfig" path="/customers/{customerId}">
+                    <http:uri-params>#[{ customerId: attributes.uriParams.customerId }]</http:uri-params>
+                    <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+                </http:request>
+                <set-payload value="#[null]"/>
+                <set-variable variableName="httpStatus" value="204"/>
+            </otherwise>
+        </choice>
+    </flow>
+
+    <!-- ============================================================
+         ORDER operations (orders are a sub-resource of customer)
+         ============================================================ -->
+
+    <!-- GET /customers/{id}/orders -> filtered list -->
+    <flow name="get:\customers\(customerId)\orders:apiConfig">
+        <flow-ref name="ensureCustomerExists"/>
+        <http:request method="GET" config-ref="sysOrdersConfig" path="/orders">
+            <http:query-params>#[{ customerId: attributes.uriParams.customerId }]</http:query-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+        </http:request>
+        <set-variable variableName="httpStatus" value="200"/>
+    </flow>
+
+    <!-- POST /customers/{id}/orders -> verify customer, stamp customerId, create -->
+    <flow name="post:\customers\(customerId)\orders:application\json:apiConfig">
+        <set-variable variableName="orderIn" value="#[payload]"/>
+        <flow-ref name="ensureCustomerExists"/>
+        <ee:transform doc:name="stamp customerId from URI">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.orderIn ++ { customerId: attributes.uriParams.customerId }]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <http:request method="POST" config-ref="sysOrdersConfig" path="/orders">
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+        </http:request>
+        <set-variable variableName="httpStatus" value="201"/>
+    </flow>
+
+    <!-- GET /customers/{id}/orders/{orderId} -> details, verifying ownership -->
+    <flow name="get:\customers\(customerId)\orders\(orderId):apiConfig">
+        <flow-ref name="getOrderVerifyingOwnership"/>
+        <set-variable variableName="httpStatus" value="200"/>
+    </flow>
+
+    <!-- PUT /customers/{id}/orders/{orderId} -> edit, stays attached -->
+    <flow name="put:\customers\(customerId)\orders\(orderId):application\json:apiConfig">
+        <set-variable variableName="orderIn" value="#[payload]"/>
+        <!-- verify the order exists AND belongs to this customer -->
+        <flow-ref name="getOrderVerifyingOwnership"/>
+        <ee:transform doc:name="stamp customerId (stays attached)">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.orderIn ++ { customerId: attributes.uriParams.customerId }]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <http:request method="PUT" config-ref="sysOrdersConfig" path="/orders/{orderId}">
+            <http:uri-params>#[{ orderId: attributes.uriParams.orderId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+        </http:request>
+        <set-variable variableName="httpStatus" value="200"/>
+    </flow>
+
+    <!-- POST /customers/{id}/orders/{orderId}/cancel -> status=CANCELLED, NOT deleted -->
+    <flow name="post:\customers\(customerId)\orders\(orderId)\cancel:apiConfig">
+        <flow-ref name="getOrderVerifyingOwnership"/>
+        <set-variable variableName="existingOrder" value="#[payload]"/>
+        <ee:transform doc:name="set status CANCELLED (preserve everything else)">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  customerId: vars.existingOrder.customerId,
+  status: "CANCELLED",
+  currency: vars.existingOrder.currency,
+  items: vars.existingOrder.items default []
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <http:request method="PUT" config-ref="sysOrdersConfig" path="/orders/{orderId}">
+            <http:uri-params>#[{ orderId: attributes.uriParams.orderId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId, 'Content-Type': 'application/json' }]</http:headers>
+        </http:request>
+        <set-variable variableName="httpStatus" value="200"/>
+    </flow>
+
+    <!-- DELETE /customers/{id}/orders/{orderId} -> hard delete -->
+    <flow name="delete:\customers\(customerId)\orders\(orderId):apiConfig">
+        <flow-ref name="getOrderVerifyingOwnership"/>
+        <http:request method="DELETE" config-ref="sysOrdersConfig" path="/orders/{orderId}">
+            <http:uri-params>#[{ orderId: attributes.uriParams.orderId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+        </http:request>
+        <set-payload value="#[null]"/>
+        <set-variable variableName="httpStatus" value="204"/>
+    </flow>
+
+    <!-- ============================================================
+         Shared helpers
+         ============================================================ -->
+
+    <!-- Returns the sys-customers response as-is on 200; else raises APP:NOT_FOUND. -->
+    <sub-flow name="passThroughOr404">
+        <choice>
+            <when expression="#[attributes.statusCode == 200]">
+                <set-variable variableName="httpStatus" value="200"/>
+            </when>
+            <otherwise>
+                <raise-error type="APP:NOT_FOUND" description="Customer not found"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+
+    <!--
+      Fetches an order by id and asserts it belongs to {customerId}.
+      Leaves the order as payload on success; raises APP:NOT_FOUND otherwise.
+      This is the single place order-ownership is enforced (used by GET/PUT/DELETE/cancel).
+    -->
+    <sub-flow name="getOrderVerifyingOwnership">
+        <http:request method="GET" config-ref="sysOrdersConfig" path="/orders/{orderId}" target="orderLookup" targetValue="#[message]">
+            <http:uri-params>#[{ orderId: attributes.uriParams.orderId }]</http:uri-params>
+            <http:headers>#[{ 'X-Correlation-Id': correlationId }]</http:headers>
+            <http:response-validator>
+                <http:success-status-code-validator values="200..599"/>
+            </http:response-validator>
+        </http:request>
+        <choice>
+            <when expression="#[vars.orderLookup.attributes.statusCode == 200 and vars.orderLookup.payload.customerId == attributes.uriParams.customerId]">
+                <set-payload value="#[vars.orderLookup.payload]"/>
+            </when>
+            <otherwise>
+                <raise-error type="APP:NOT_FOUND" description="Order not found for this customer"/>
+            </otherwise>
+        </choice>
+    </sub-flow>
+</mule>

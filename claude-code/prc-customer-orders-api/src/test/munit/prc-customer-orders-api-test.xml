@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/munit http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+        http://www.mulesoft.org/schema/mule/munit-tools http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <munit:config name="prc-customer-orders-api-test.xml" minMuleVersion="4.9.0"/>
+
+    <!-- RULE: deleting a customer WITH orders must return 409 (CUSTOMER_HAS_ORDERS). -->
+    <munit:test name="delete-customer-with-orders-is-409" expectedErrorType="APP:CUSTOMER_HAS_ORDERS">
+        <munit:behavior>
+            <!-- ensureCustomerExists -> customer found -->
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref" whereValue="sysCustomersConfig"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- { id: '11111111-1111-1111-1111-111111111111', firstName: 'Ada' }]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+            <!-- orders filter -> returns two orders -->
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref" whereValue="sysOrdersConfig"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- [ { id: 'o1' }, { id: 'o2' } ]]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: '11111111-1111-1111-1111-111111111111' } }]"/>
+            </munit:set-event>
+            <flow-ref name="delete:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+    </munit:test>
+
+    <!-- RULE: deleting a customer WITHOUT orders succeeds -> 204. -->
+    <munit:test name="delete-customer-without-orders-is-204">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref" whereValue="sysCustomersConfig"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- { id: '44444444-4444-4444-4444-444444444444' }]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref" whereValue="sysOrdersConfig"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- []]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: '44444444-4444-4444-4444-444444444444' } }]"/>
+            </munit:set-event>
+            <flow-ref name="delete:\customers\(customerId):apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo('204')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <!-- RULE: creating an order for a missing customer -> 404 (APP:NOT_FOUND). -->
+    <munit:test name="create-order-for-missing-customer-is-404" expectedErrorType="APP:NOT_FOUND">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref" whereValue="sysCustomersConfig"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- { error: { code: 'NOT_FOUND' } }]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 404 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload value="#[output application/json --- { items: [ { sku: 'X', name: 'Y', qty: 1, price: 5 } ] }]"/>
+                <munit:attributes value="#[{ uriParams: { customerId: 'nope' } }]"/>
+            </munit:set-event>
+            <flow-ref name="post:\customers\(customerId)\orders:application\json:apiConfig"/>
+        </munit:execution>
+    </munit:test>
+
+    <!-- RULE: cancel sets status=CANCELLED and issues a PUT (not a DELETE). -->
+    <munit:test name="cancel-order-sets-status-cancelled">
+        <munit:behavior>
+            <!-- getOrderVerifyingOwnership: order lookup returns an order owned by this customer -->
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref" whereValue="sysOrdersConfig"/>
+                    <munit-tools:with-attribute attributeName="method" whereValue="GET"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- { id: 'ord-1', customerId: 'cust-1', status: 'NEW', currency: 'USD', items: [] }]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+            <!-- the PUT that applies the cancellation echoes back the cancelled order -->
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref" whereValue="sysOrdersConfig"/>
+                    <munit-tools:with-attribute attributeName="method" whereValue="PUT"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload value="#[output application/json --- { id: 'ord-1', customerId: 'cust-1', status: 'CANCELLED', currency: 'USD', items: [] }]"/>
+                    <munit-tools:attributes value="#[{ statusCode: 200 }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:attributes value="#[{ uriParams: { customerId: 'cust-1', orderId: 'ord-1' } }]"/>
+            </munit:set-event>
+            <flow-ref name="post:\customers\(customerId)\orders\(orderId)\cancel:apiConfig"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.status]" is="#[MunitTools::equalTo('CANCELLED')]"/>
+            <munit-tools:assert-that expression="#[vars.httpStatus]" is="#[MunitTools::equalTo('200')]"/>
+        </munit:validation>
+    </munit:test>
+</mule>

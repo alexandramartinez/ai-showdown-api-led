@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:file="http://www.mulesoft.org/schema/mule/file"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <configuration-properties file="config-local.yaml"/>
+
+    <http:listener-config name="httpListenerConfig">
+        <http:listener-connection host="${http.host}" port="${http.port}"/>
+    </http:listener-config>
+
+    <apikit:config name="apiConfig" raml="api/sys-orders-api.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus"/>
+
+    <file:config name="fileConfig">
+        <file:connection workingDir="${data.dir}"/>
+    </file:config>
+
+    <error-handler name="globalErrorHandler">
+        <on-error-propagate type="APIKIT:BAD_REQUEST" logException="false">
+            <set-variable variableName="httpStatus" value="400"/>
+            <ee:transform doc:name="400 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "BAD_REQUEST", message: error.description default "Malformed request", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:NOT_FOUND, HTTP:NOT_FOUND" logException="false">
+            <set-variable variableName="httpStatus" value="404"/>
+            <ee:transform doc:name="404 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "NOT_FOUND", message: error.description default "Resource not found", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:METHOD_NOT_ALLOWED" logException="false">
+            <set-variable variableName="httpStatus" value="405"/>
+            <ee:transform doc:name="405 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "METHOD_NOT_ALLOWED", message: "Method not allowed", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:NOT_ACCEPTABLE" logException="false">
+            <set-variable variableName="httpStatus" value="406"/>
+            <ee:transform doc:name="406 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "NOT_ACCEPTABLE", message: "Not acceptable", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="APIKIT:UNSUPPORTED_MEDIA_TYPE" logException="false">
+            <set-variable variableName="httpStatus" value="415"/>
+            <ee:transform doc:name="415 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "UNSUPPORTED_MEDIA_TYPE", message: "Unsupported media type", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+        <on-error-propagate type="ANY">
+            <set-variable variableName="httpStatus" value="500"/>
+            <ee:transform doc:name="500 body">
+                <ee:message>
+                    <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: { code: "INTERNAL_SERVER_ERROR", message: error.description default "Unexpected error", correlationId: correlationId } }]]></ee:set-payload>
+                </ee:message>
+            </ee:transform>
+        </on-error-propagate>
+    </error-handler>
+</mule>

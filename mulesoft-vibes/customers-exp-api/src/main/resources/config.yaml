@@ -1,0 +1,8 @@
+http:
+  port: "8081"
+
+prc:
+  api:
+    host: "localhost"
+    port: "8082"
+    basePath: "/"

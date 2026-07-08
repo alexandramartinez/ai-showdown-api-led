@@ -1,0 +1,459 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+    <!-- ==================== GET /orders?customerId={id} ==================== -->
+    <flow name="list-orders-flow"
+        doc:name="List Orders Flow"
+        doc:description="Returns all orders from seeded mock data, optionally filtered by customerId query parameter">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/orders"
+            allowedMethods="GET"
+            doc:name="GET /orders"
+            doc:description="Receives GET requests to list orders, supports optional customerId query param filter">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <ee:transform
+            doc:name="Load and filter orders"
+            doc:description="Reads all orders from mock data and filters by customerId if provided as a query parameter">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var allOrders = readUrl("classpath://mock-data/orders.json", "application/json")
+var customerIdFilter = attributes.queryParams.customerId default null
+---
+if (customerIdFilter != null)
+    allOrders filter ($.customerId == customerIdFilter)
+else
+    allOrders]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <logger
+            level="INFO"
+            message="#['[orders-sys-api] GET /orders → returning ' ++ (sizeOf(payload) as String) ++ ' orders']"
+            doc:name="Log list orders"
+            doc:description="Logs the number of orders returned after filtering" />
+    </flow>
+
+    <!-- ==================== GET /orders/{orderId} ==================== -->
+    <flow name="get-order-flow"
+        doc:name="Get Order Flow"
+        doc:description="Returns a single order record by ID from seeded mock data, or 404 if not found">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/orders/{orderId}"
+            allowedMethods="GET"
+            doc:name="GET /orders/{orderId}"
+            doc:description="Receives GET requests to retrieve a specific order by ID">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable
+            variableName="orderId"
+            value="#[attributes.uriParams.orderId]"
+            doc:name="Store orderId"
+            doc:description="Captures the orderId URI parameter into a flow variable" />
+        <ee:transform
+            doc:name="Find order by ID"
+            doc:description="Filters the orders mock data to find the order matching the requested ID">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var orders = readUrl("classpath://mock-data/orders.json", "application/json")
+var result = orders filter ($.id == vars.orderId)
+---
+if (isEmpty(result)) null else result[0]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice
+            doc:name="Order found?"
+            doc:description="Routes based on whether the order ID exists in mock data">
+            <when expression="#[payload == null]"
+                doc:name="Not found"
+                doc:description="Order ID does not match any seeded record">
+                <set-variable
+                    variableName="httpStatus"
+                    value="404"
+                    doc:name="Set 404 status"
+                    doc:description="Sets HTTP response status to 404 Not Found" />
+                <ee:transform
+                    doc:name="Build 404 error body"
+                    doc:description="Constructs a JSON error response indicating the order was not found">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Order with ID '" ++ vars.orderId ++ "' was not found",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise
+                doc:name="Found"
+                doc:description="Order record found, return 200">
+                <set-variable
+                    variableName="httpStatus"
+                    value="200"
+                    doc:name="Set 200 status"
+                    doc:description="Sets HTTP response status to 200 OK" />
+            </otherwise>
+        </choice>
+        <logger
+            level="INFO"
+            message="#['[orders-sys-api] GET /orders/' ++ vars.orderId ++ ' → ' ++ (vars.httpStatus default '200')]"
+            doc:name="Log get order"
+            doc:description="Logs the result status of the order lookup" />
+    </flow>
+
+    <!-- ==================== POST /orders ==================== -->
+    <flow name="create-order-flow"
+        doc:name="Create Order Flow"
+        doc:description="Creates a new order record attached to a customer and returns the created resource with a generated ID">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/orders"
+            allowedMethods="POST"
+            doc:name="POST /orders"
+            doc:description="Receives POST requests to create a new order; expects customerId in request body">
+            <http:response statusCode="#[vars.httpStatus default 201]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <ee:transform
+            doc:name="Build created order response"
+            doc:description="Constructs the created order object with a generated ID, PENDING status, and timestamps">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+import * from dw::core::UUID
+var now = now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+---
+{
+    id: "o" ++ ((randomUUID() splitBy "-")[0]),
+    customerId: payload.customerId,
+    items: payload.items default [],
+    total: (payload.items default [] reduce ((item, acc = 0.0) ->
+        acc + (item.quantity * item.unitPrice)
+    )) as Number {format: "0.00"},
+    status: "PENDING",
+    createdAt: now,
+    updatedAt: now
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <set-variable
+            variableName="httpStatus"
+            value="201"
+            doc:name="Set 201 status"
+            doc:description="Sets HTTP response status to 201 Created" />
+        <logger
+            level="INFO"
+            message="#['[orders-sys-api] POST /orders → created order ' ++ payload.id ++ ' for customer ' ++ payload.customerId]"
+            doc:name="Log create order"
+            doc:description="Logs the ID of the newly created order and its associated customer" />
+    </flow>
+
+    <!-- ==================== PUT /orders/{orderId} ==================== -->
+    <flow name="update-order-flow"
+        doc:name="Update Order Flow"
+        doc:description="Updates an existing order record by ID and returns the updated resource, or 404 if not found">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/orders/{orderId}"
+            allowedMethods="PUT"
+            doc:name="PUT /orders/{orderId}"
+            doc:description="Receives PUT requests to update an existing order by ID">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable
+            variableName="orderId"
+            value="#[attributes.uriParams.orderId]"
+            doc:name="Store orderId"
+            doc:description="Captures the orderId URI parameter into a flow variable" />
+        <set-variable
+            variableName="requestPayload"
+            value="#[payload]"
+            doc:name="Store request payload"
+            doc:description="Preserves the incoming request payload before order lookup" />
+        <ee:transform
+            doc:name="Check order exists"
+            doc:description="Verifies the order ID exists in mock data before applying the update">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var orders = readUrl("classpath://mock-data/orders.json", "application/json")
+var existing = orders filter ($.id == vars.orderId)
+---
+if (isEmpty(existing)) null else existing[0]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice
+            doc:name="Order exists?"
+            doc:description="Routes based on whether the order ID to update exists in mock data">
+            <when expression="#[payload == null]"
+                doc:name="Not found"
+                doc:description="Order ID does not exist, return 404">
+                <set-variable
+                    variableName="httpStatus"
+                    value="404"
+                    doc:name="Set 404 status"
+                    doc:description="Sets HTTP response status to 404 Not Found" />
+                <ee:transform
+                    doc:name="Build 404 error body"
+                    doc:description="Constructs a JSON error response indicating the order to update was not found">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Order with ID '" ++ vars.orderId ++ "' was not found",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise
+                doc:name="Found — apply update"
+                doc:description="Order exists, merge incoming fields and return updated record">
+                <ee:transform
+                    doc:name="Merge update into order"
+                    doc:description="Merges the incoming request fields onto the existing order record, recalculating total if items changed">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var updatedItems = vars.requestPayload.items default payload.items
+---
+{
+    id: vars.orderId,
+    customerId: payload.customerId,
+    items: updatedItems,
+    total: (updatedItems reduce ((item, acc = 0.0) ->
+        acc + (item.quantity * item.unitPrice)
+    )) as Number {format: "0.00"},
+    status: vars.requestPayload.status default payload.status,
+    createdAt: payload.createdAt,
+    updatedAt: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable
+                    variableName="httpStatus"
+                    value="200"
+                    doc:name="Set 200 status"
+                    doc:description="Sets HTTP response status to 200 OK" />
+            </otherwise>
+        </choice>
+        <logger
+            level="INFO"
+            message="#['[orders-sys-api] PUT /orders/' ++ vars.orderId ++ ' → ' ++ (vars.httpStatus default '200')]"
+            doc:name="Log update order"
+            doc:description="Logs the result status of the order update operation" />
+    </flow>
+
+    <!-- ==================== PATCH /orders/{orderId}/cancel ==================== -->
+    <flow name="cancel-order-flow"
+        doc:name="Cancel Order Flow"
+        doc:description="Sets an order's status to CANCELLED without deleting it. Returns 200 with updated order, or 404 if not found.">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/orders/{orderId}/cancel"
+            allowedMethods="PATCH"
+            doc:name="PATCH /orders/{orderId}/cancel"
+            doc:description="Receives PATCH requests to cancel an order by setting its status to CANCELLED">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable
+            variableName="orderId"
+            value="#[attributes.uriParams.orderId]"
+            doc:name="Store orderId"
+            doc:description="Captures the orderId URI parameter into a flow variable" />
+        <ee:transform
+            doc:name="Find order to cancel"
+            doc:description="Looks up the order by ID to verify it exists before cancelling">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var orders = readUrl("classpath://mock-data/orders.json", "application/json")
+var result = orders filter ($.id == vars.orderId)
+---
+if (isEmpty(result)) null else result[0]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice
+            doc:name="Order found?"
+            doc:description="Routes based on whether the order to cancel exists in mock data">
+            <when expression="#[payload == null]"
+                doc:name="Not found"
+                doc:description="Order ID does not exist, return 404">
+                <set-variable
+                    variableName="httpStatus"
+                    value="404"
+                    doc:name="Set 404 status"
+                    doc:description="Sets HTTP response status to 404 Not Found" />
+                <ee:transform
+                    doc:name="Build 404 error body"
+                    doc:description="Constructs a JSON error response indicating the order to cancel was not found">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Order with ID '" ++ vars.orderId ++ "' was not found",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise
+                doc:name="Found — cancel order"
+                doc:description="Order found, update status to CANCELLED and return the modified record">
+                <ee:transform
+                    doc:name="Set status to CANCELLED"
+                    doc:description="Applies the CANCELLED status to the order record while preserving all other fields">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload ++ {
+    status: "CANCELLED",
+    updatedAt: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+                <set-variable
+                    variableName="httpStatus"
+                    value="200"
+                    doc:name="Set 200 status"
+                    doc:description="Sets HTTP response status to 200 OK" />
+            </otherwise>
+        </choice>
+        <logger
+            level="INFO"
+            message="#['[orders-sys-api] PATCH /orders/' ++ vars.orderId ++ '/cancel → ' ++ (vars.httpStatus default '200')]"
+            doc:name="Log cancel order"
+            doc:description="Logs the result status of the order cancellation operation" />
+    </flow>
+
+    <!-- ==================== DELETE /orders/{orderId} ==================== -->
+    <flow name="delete-order-flow"
+        doc:name="Delete Order Flow"
+        doc:description="Permanently deletes an order record by ID. Returns 204 No Content on success, 404 if not found.">
+        <http:listener
+            config-ref="HTTP_Listener_config"
+            path="/orders/{orderId}"
+            allowedMethods="DELETE"
+            doc:name="DELETE /orders/{orderId}"
+            doc:description="Receives DELETE requests to permanently remove an order by ID">
+            <http:response statusCode="#[vars.httpStatus default 204]">
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{'Content-Type': 'application/json'}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <set-variable
+            variableName="orderId"
+            value="#[attributes.uriParams.orderId]"
+            doc:name="Store orderId"
+            doc:description="Captures the orderId URI parameter into a flow variable" />
+        <ee:transform
+            doc:name="Check order exists"
+            doc:description="Verifies the order ID exists in mock data before performing the delete">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var orders = readUrl("classpath://mock-data/orders.json", "application/json")
+var existing = orders filter ($.id == vars.orderId)
+---
+if (isEmpty(existing)) null else existing[0]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+        <choice
+            doc:name="Order exists?"
+            doc:description="Routes based on whether the order ID to delete exists in mock data">
+            <when expression="#[payload == null]"
+                doc:name="Not found"
+                doc:description="Order ID does not exist, return 404">
+                <set-variable
+                    variableName="httpStatus"
+                    value="404"
+                    doc:name="Set 404 status"
+                    doc:description="Sets HTTP response status to 404 Not Found" />
+                <ee:transform
+                    doc:name="Build 404 error body"
+                    doc:description="Constructs a JSON error response indicating the order to delete was not found">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    error: "Not Found",
+    message: "Order with ID '" ++ vars.orderId ++ "' was not found",
+    statusCode: 404
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
+            </when>
+            <otherwise
+                doc:name="Deleted"
+                doc:description="Order found, simulate deletion and return 204 No Content">
+                <set-variable
+                    variableName="httpStatus"
+                    value="204"
+                    doc:name="Set 204 status"
+                    doc:description="Sets HTTP response status to 204 No Content" />
+                <set-payload
+                    value="#[null]"
+                    doc:name="Empty response body"
+                    doc:description="Sets empty payload for 204 No Content response" />
+            </otherwise>
+        </choice>
+        <logger
+            level="INFO"
+            message="#['[orders-sys-api] DELETE /orders/' ++ vars.orderId ++ ' → ' ++ (vars.httpStatus default '204')]"
+            doc:name="Log delete order"
+            doc:description="Logs the result status of the order delete operation" />
+    </flow>
+
+</mule>

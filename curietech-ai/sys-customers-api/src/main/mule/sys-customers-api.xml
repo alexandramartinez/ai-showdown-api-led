@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+
+	<!-- ============================================================= -->
+	<!-- One-time seeding of the mock customer datastore at startup     -->
+	<!-- ============================================================= -->
+	<flow name="sys-customers-seed-flow">
+		<scheduler doc:name="Startup Scheduler">
+			<scheduling-strategy>
+				<fixed-frequency frequency="315360000000" timeUnit="MILLISECONDS" startDelay="0" />
+			</scheduling-strategy>
+		</scheduler>
+		<os:contains doc:name="Already Seeded?" key="CUST-001"
+			objectStore="customerStore" target="alreadySeeded" />
+		<choice doc:name="Seed if empty">
+			<when expression="#[not (vars.alreadySeeded default false)]">
+				<ee:transform doc:name="Load Seed Data">
+					<ee:message>
+						<ee:set-payload resource="dwl/seed-customers.dwl" />
+					</ee:message>
+				</ee:transform>
+				<foreach doc:name="Store Each Customer" collection="#[payload]">
+					<os:store doc:name="Store Customer" key="#[payload.id]"
+						objectStore="customerStore">
+						<os:value><![CDATA[#[payload]]]></os:value>
+					</os:store>
+				</foreach>
+				<logger level="INFO" doc:name="Seed Complete"
+					message="#['Seeded ' ++ (sizeOf(payload) as String) ++ ' customers into customerStore']" />
+			</when>
+			<otherwise>
+				<logger level="INFO" doc:name="Seed Skipped"
+					message="customerStore already seeded - skipping" />
+			</otherwise>
+		</choice>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- Main API flow: HTTP listener + APIkit router                  -->
+	<!-- ============================================================= -->
+	<flow name="sys-customers-api-main-flow">
+		<http:listener config-ref="sys-customers-httpListenerConfig" path="${http.basePath}/*">
+			<http:response statusCode="#[vars.httpStatus default 200]">
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:response>
+			<http:error-response statusCode="#[vars.httpStatus default 500]">
+				<http:body><![CDATA[#[payload]]]></http:body>
+				<http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+			</http:error-response>
+		</http:listener>
+		<apikit:router config-ref="sys-customers-api-config" />
+		<error-handler ref="sys-customers-global-error-handler" />
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- Helper sub-flow: list all customers from the object store     -->
+	<!-- ============================================================= -->
+	<sub-flow name="sys-customers-list-all">
+		<os:retrieve-all-keys doc:name="Get All Keys" objectStore="customerStore"
+			target="customerKeys" />
+		<set-variable variableName="customerList" value="#[[]]" doc:name="Init List" />
+		<foreach doc:name="Retrieve Each" collection="#[vars.customerKeys]">
+			<os:retrieve doc:name="Retrieve Customer" key="#[payload]"
+				objectStore="customerStore" target="currentCustomer" />
+			<set-variable variableName="customerList"
+				value="#[vars.customerList + vars.currentCustomer]" doc:name="Append" />
+		</foreach>
+		<ee:transform doc:name="Sort By Id">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+(vars.customerList default []) orderBy $.id]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</sub-flow>
+
+	<!-- ============================================================= -->
+	<!-- GET /customers                                                -->
+	<!-- ============================================================= -->
+	<flow name="get:\customers:sys-customers-api-config">
+		<flow-ref name="sys-customers-list-all" doc:name="List All Customers" />
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- GET /customers/{customerId}                                   -->
+	<!-- ============================================================= -->
+	<flow name="get:\customers\(customerId):sys-customers-api-config">
+		<os:contains doc:name="Exists?" key="#[attributes.uriParams.customerId]"
+			objectStore="customerStore" target="customerExists" />
+		<choice doc:name="Found?">
+			<when expression="#[vars.customerExists default false]">
+				<os:retrieve doc:name="Retrieve Customer"
+					key="#[attributes.uriParams.customerId]" objectStore="customerStore"
+					target="customer" />
+				<ee:transform doc:name="Return Customer">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.customer]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<ee:transform doc:name="Not Found">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "CUSTOMER_NOT_FOUND" }]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- POST /customers                                               -->
+	<!-- ============================================================= -->
+	<flow name="post:\customers:sys-customers-api-config">
+		<os:retrieve-all-keys doc:name="Get All Keys" objectStore="customerStore"
+			target="customerKeys" />
+		<ee:transform doc:name="Build New Customer">
+			<ee:variables>
+				<ee:set-variable variableName="newCustomer"><![CDATA[%dw 2.0
+output application/java
+var maxNum = max((vars.customerKeys default []) map ((k) -> (k splitBy "-")[1] as Number)) default 0
+var newId = "CUST-" ++ ((maxNum + 1) as String {format: "000"})
+---
+{
+	id: newId,
+	firstName: payload.firstName,
+	lastName: payload.lastName,
+	email: payload.email,
+	phone: payload.phone,
+	createdAt: now() as String {format: "yyyy-MM-dd'T'HH:mm:ss'Z'"}
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<os:store doc:name="Store New Customer" key="#[vars.newCustomer.id]"
+			objectStore="customerStore">
+			<os:value><![CDATA[#[vars.newCustomer]]]></os:value>
+		</os:store>
+		<ee:transform doc:name="Return Created">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.newCustomer]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="httpStatus"><![CDATA[201]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- PUT /customers/{customerId}                                   -->
+	<!-- ============================================================= -->
+	<flow name="put:\customers\(customerId):sys-customers-api-config">
+		<os:contains doc:name="Exists?" key="#[attributes.uriParams.customerId]"
+			objectStore="customerStore" target="customerExists" />
+		<choice doc:name="Found?">
+			<when expression="#[vars.customerExists default false]">
+				<os:retrieve doc:name="Retrieve Existing"
+					key="#[attributes.uriParams.customerId]" objectStore="customerStore"
+					target="existingCustomer" />
+				<ee:transform doc:name="Merge Update">
+					<ee:variables>
+						<ee:set-variable variableName="updatedCustomer"><![CDATA[%dw 2.0
+output application/java
+var existing = vars.existingCustomer
+---
+{
+	id: existing.id,
+	firstName: payload.firstName default existing.firstName,
+	lastName: payload.lastName default existing.lastName,
+	email: payload.email default existing.email,
+	phone: payload.phone default existing.phone,
+	createdAt: existing.createdAt
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<os:store doc:name="Store Updated"
+					key="#[attributes.uriParams.customerId]" objectStore="customerStore">
+					<os:value><![CDATA[#[vars.updatedCustomer]]]></os:value>
+				</os:store>
+				<ee:transform doc:name="Return Updated">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+vars.updatedCustomer]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<ee:transform doc:name="Not Found">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "CUSTOMER_NOT_FOUND" }]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+
+	<!-- ============================================================= -->
+	<!-- DELETE /customers/{customerId}                                -->
+	<!-- ============================================================= -->
+	<flow name="delete:\customers\(customerId):sys-customers-api-config">
+		<os:contains doc:name="Exists?" key="#[attributes.uriParams.customerId]"
+			objectStore="customerStore" target="customerExists" />
+		<choice doc:name="Found?">
+			<when expression="#[vars.customerExists default false]">
+				<os:remove doc:name="Remove Customer"
+					key="#[attributes.uriParams.customerId]" objectStore="customerStore" />
+				<ee:transform doc:name="No Content">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+null]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[204]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</when>
+			<otherwise>
+				<ee:transform doc:name="Not Found">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{ error: "CUSTOMER_NOT_FOUND" }]]></ee:set-payload>
+					</ee:message>
+					<ee:variables>
+						<ee:set-variable variableName="httpStatus"><![CDATA[404]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	</flow>
+
+</mule>
